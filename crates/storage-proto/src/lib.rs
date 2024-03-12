@@ -42,7 +42,7 @@ pub mod storage {
                 invocation_status, maybe_full_invocation_id, outbox_message, response_result,
                 service_status, source, span_relation, timer, BackgroundCallResolutionResult,
                 DedupSequenceNumber, EnrichedEntryHeader, EpochSequenceNumber, FullInvocationId,
-                InboxEntry, InvocationResolutionResult, InvocationStatus, JournalEntry,
+                Header, InboxEntry, InvocationResolutionResult, InvocationStatus, JournalEntry,
                 JournalMeta, KvPair, MaybeFullInvocationId, OutboxMessage, ResponseResult,
                 ServiceId, ServiceInvocation, ServiceInvocationResponseSink, ServiceStatus, Source,
                 SpanContext, SpanRelation, StateMutation, Timer,
@@ -250,6 +250,12 @@ pub mod storage {
                             .ok_or(ConversionError::missing_field("source"))?,
                     )?;
 
+                    let headers = value
+                        .headers
+                        .into_iter()
+                        .map(|h| restate_types::invocation::Header::try_from(h))
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+
                     Ok(
                         restate_storage_api::invocation_status_table::InvocationMetadata::new(
                             service_id,
@@ -262,6 +268,7 @@ pub mod storage {
                                 MillisSinceEpoch::new(value.modification_time),
                             ),
                             source,
+                            headers,
                         ),
                     )
                 }
@@ -279,6 +286,7 @@ pub mod storage {
                         journal_metadata,
                         timestamps,
                         source,
+                        headers,
                     } = value;
 
                     Invoked {
@@ -295,6 +303,7 @@ pub mod storage {
                         creation_time: timestamps.creation_time().as_u64(),
                         modification_time: timestamps.modification_time().as_u64(),
                         source: Some(Source::from(source)),
+                        headers: headers.into_iter().map(Into::into).collect(),
                     }
                 }
             }
@@ -348,6 +357,12 @@ pub mod storage {
                             .ok_or(ConversionError::missing_field("source"))?,
                     )?;
 
+                    let headers = value
+                        .headers
+                        .into_iter()
+                        .map(|h| restate_types::invocation::Header::try_from(h))
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+
                     Ok((
                         restate_storage_api::invocation_status_table::InvocationMetadata::new(
                             service_id,
@@ -360,6 +375,7 @@ pub mod storage {
                                 MillisSinceEpoch::new(value.modification_time),
                             ),
                             caller,
+                            headers,
                         ),
                         waiting_for_completed_entries,
                     ))
@@ -400,6 +416,7 @@ pub mod storage {
                         modification_time: metadata.timestamps.modification_time().as_u64(),
                         waiting_for_completed_entries,
                         source: Some(Source::from(metadata.source)),
+                        headers: metadata.headers.into_iter().map(Into::into).collect(),
                     }
                 }
             }
@@ -636,6 +653,7 @@ pub mod storage {
                         span_context,
                         argument,
                         source,
+                        headers,
                     } = value;
 
                     let id = restate_types::identifiers::FullInvocationId::try_from(
@@ -660,6 +678,11 @@ pub mod storage {
                         source.ok_or(ConversionError::missing_field("source"))?,
                     )?;
 
+                    let headers = headers
+                        .into_iter()
+                        .map(|h| restate_types::invocation::Header::try_from(h))
+                        .collect::<Result<Vec<_>, ConversionError>>()?;
+
                     Ok(restate_types::invocation::ServiceInvocation {
                         fid: id,
                         method_name,
@@ -667,6 +690,7 @@ pub mod storage {
                         source,
                         response_sink,
                         span_context,
+                        headers,
                     })
                 }
             }
@@ -678,6 +702,7 @@ pub mod storage {
                     let response_sink = ServiceInvocationResponseSink::from(value.response_sink);
                     let method_name = value.method_name.into_bytes();
                     let source = Source::from(value.source);
+                    let headers = value.headers.into_iter().map(Into::into).collect();
 
                     ServiceInvocation {
                         id: Some(id),
@@ -686,6 +711,7 @@ pub mod storage {
                         method_name,
                         argument: value.argument,
                         source: Some(source),
+                        headers,
                     }
                 }
             }
@@ -1048,6 +1074,25 @@ pub mod storage {
 
                     ServiceInvocationResponseSink {
                         response_sink: Some(response_sink),
+                    }
+                }
+            }
+
+            impl TryFrom<Header> for restate_types::invocation::Header {
+                type Error = ConversionError;
+
+                fn try_from(value: Header) -> Result<Self, Self::Error> {
+                    let Header { name, value } = value;
+
+                    Ok(restate_types::invocation::Header::new(name, value))
+                }
+            }
+
+            impl From<restate_types::invocation::Header> for Header {
+                fn from(value: restate_types::invocation::Header) -> Self {
+                    Self {
+                        name: value.name.to_string(),
+                        value: value.value.to_string(),
                     }
                 }
             }

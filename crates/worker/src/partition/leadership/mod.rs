@@ -490,6 +490,7 @@ where
                     Source::Internal,
                     None,
                     SpanRelation::None,
+                    vec![],
                 );
 
                 action_effect_handler
@@ -514,6 +515,7 @@ where
                     Source::Internal,
                     None,
                     SpanRelation::None,
+                    vec![],
                 );
 
                 action_effect_handler

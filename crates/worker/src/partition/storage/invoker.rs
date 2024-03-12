@@ -60,6 +60,7 @@ where
                 invoked_status.journal_metadata.span_context,
                 invoked_status.method,
                 invoked_status.deployment_id,
+                invoked_status.headers,
             );
             let journal_stream = self
                 .0

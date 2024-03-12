@@ -358,6 +358,7 @@ where
                             caller,
                             response_sink,
                             SpanRelation::default(),
+                            vec![],
                         ),
                     ),
                     ServiceInvocationSpanContext::empty(),
@@ -1509,6 +1510,7 @@ where
             source,
             response_sink,
             span_context,
+            headers: vec![],
         }
     }
 }

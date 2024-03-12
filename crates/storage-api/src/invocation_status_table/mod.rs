@@ -15,7 +15,7 @@ use restate_types::identifiers::{
     DeploymentId, EntryIndex, FullInvocationId, InvocationId, PartitionKey, ServiceId,
 };
 use restate_types::invocation::{
-    ServiceInvocationResponseSink, ServiceInvocationSpanContext, Source,
+    Header, ServiceInvocationResponseSink, ServiceInvocationSpanContext, Source,
 };
 use restate_types::time::MillisSinceEpoch;
 use std::collections::HashSet;
@@ -184,9 +184,11 @@ pub struct InvocationMetadata {
     pub response_sink: Option<ServiceInvocationResponseSink>,
     pub timestamps: StatusTimestamps,
     pub source: Source,
+    pub headers: Vec<Header>,
 }
 
 impl InvocationMetadata {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         service_id: ServiceId,
         journal_metadata: JournalMetadata,
@@ -195,6 +197,7 @@ impl InvocationMetadata {
         response_sink: Option<ServiceInvocationResponseSink>,
         timestamps: StatusTimestamps,
         source: Source,
+        headers: Vec<Header>,
     ) -> Self {
         Self {
             service_id,
@@ -204,6 +207,7 @@ impl InvocationMetadata {
             response_sink,
             timestamps,
             source,
+            headers,
         }
     }
 }
@@ -247,6 +251,7 @@ mod mocks {
                 response_sink: None,
                 timestamps: StatusTimestamps::now(),
                 source: Source::Ingress,
+                headers: vec![],
             }
         }
     }

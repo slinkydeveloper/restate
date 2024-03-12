@@ -11,7 +11,7 @@
 use bytestring::ByteString;
 use futures::Stream;
 use restate_types::identifiers::{DeploymentId, FullInvocationId};
-use restate_types::invocation::ServiceInvocationSpanContext;
+use restate_types::invocation::{Header, ServiceInvocationSpanContext};
 use restate_types::journal::raw::PlainRawEntry;
 use restate_types::journal::EntryIndex;
 use std::future::Future;
@@ -23,6 +23,7 @@ pub struct JournalMetadata {
     pub span_context: ServiceInvocationSpanContext,
     pub method: ByteString,
     pub deployment_id: Option<DeploymentId>,
+    pub headers: Vec<Header>,
 }
 
 impl JournalMetadata {
@@ -31,12 +32,14 @@ impl JournalMetadata {
         span_context: ServiceInvocationSpanContext,
         method: ByteString,
         deployment_id: Option<DeploymentId>,
+        headers: Vec<Header>,
     ) -> Self {
         Self {
             deployment_id,
             method,
             span_context,
             length,
+            headers,
         }
     }
 }
@@ -74,6 +77,7 @@ pub mod mocks {
                     ServiceInvocationSpanContext::empty(),
                     "test".into(),
                     None,
+                    vec![],
                 ),
                 futures::stream::empty(),
             ))

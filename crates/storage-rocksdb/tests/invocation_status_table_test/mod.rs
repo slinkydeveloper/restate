@@ -54,6 +54,7 @@ fn invoked_status(service_id: impl Into<ServiceId>) -> InvocationStatus {
         None,
         StatusTimestamps::new(MillisSinceEpoch::new(0), MillisSinceEpoch::new(0)),
         Source::Ingress,
+        vec![]
     ))
 }
 

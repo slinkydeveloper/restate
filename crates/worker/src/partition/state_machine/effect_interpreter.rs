@@ -522,6 +522,7 @@ impl<Codec: RawEntryCodec> EffectInterpreter<Codec> {
                     service_invocation.response_sink.clone(),
                     StatusTimestamps::now(),
                     service_invocation.source,
+                    service_invocation.headers.clone(),
                 )),
             )
             .await?;
@@ -555,6 +556,7 @@ impl<Codec: RawEntryCodec> EffectInterpreter<Codec> {
                         journal_metadata.span_context,
                         service_invocation.method_name.clone(),
                         None,
+                        service_invocation.headers,
                     ),
                     vec![PlainRawEntry::new(
                         header.clone().erase_enrichment(),

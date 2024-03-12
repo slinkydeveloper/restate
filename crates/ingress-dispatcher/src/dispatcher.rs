@@ -92,6 +92,7 @@ impl DispatchIngressRequest for IngressDispatcher {
             span_context,
             request_mode,
             idempotency,
+            headers,
         } = ingress_request;
 
         let invocation_id: InvocationId = fid.clone().into();
@@ -134,6 +135,7 @@ impl DispatchIngressRequest for IngressDispatcher {
                         source: invocation::Source::Ingress,
                         response_sink,
                         span_context,
+                        headers,
                     },
                     MapResponseAction::IdempotentInvokerResponse,
                 )
@@ -146,6 +148,7 @@ impl DispatchIngressRequest for IngressDispatcher {
                         source: invocation::Source::Ingress,
                         response_sink,
                         span_context,
+                        headers,
                     },
                     MapResponseAction::None,
                 )

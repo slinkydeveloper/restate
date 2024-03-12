@@ -35,7 +35,7 @@ use restate_types::errors::InvocationError;
 use restate_types::identifiers::{
     DeploymentId, EntryIndex, FullInvocationId, PartitionLeaderEpoch,
 };
-use restate_types::invocation::ServiceInvocationSpanContext;
+use restate_types::invocation::{Header, ServiceInvocationSpanContext};
 use restate_types::journal::enriched::EnrichedRawEntry;
 use restate_types::journal::raw::PlainRawEntry;
 use restate_types::journal::EntryType;
@@ -431,8 +431,13 @@ where
         // Prepare the request and send start message
         let (mut http_stream_tx, request) = self.prepare_request(path, deployment.metadata);
         shortcircuit!(
-            self.write_start(&mut http_stream_tx, journal_size, state_iter)
-                .await
+            self.write_start(
+                &mut http_stream_tx,
+                journal_size,
+                journal_metadata.headers,
+                state_iter
+            )
+            .await
         );
 
         // Initialize the response stream state
@@ -589,6 +594,7 @@ where
         &mut self,
         http_stream_tx: &mut Sender,
         journal_size: u32,
+        headers: Vec<Header>,
         state_entries: EagerState<I>,
     ) -> Result<(), InvocationTaskError> {
         let is_partial = state_entries.is_partial();
@@ -602,7 +608,9 @@ where
                 Some(self.full_invocation_id.service_id.key.clone()),
                 journal_size,
                 is_partial,
-                iter::empty(),
+                headers
+                    .into_iter()
+                    .map(|h| (h.name.to_string(), h.value.to_string())),
                 state_entries,
             ),
         )
