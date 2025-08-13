@@ -674,6 +674,24 @@ impl StorageAccess for PartitionStore {
             .map_err(|error| StorageError::Generic(error.into()))
     }
 
+    #[inline]
+    fn exists<K: AsRef<[u8]>>(&self, table: TableKind, key: K) -> Result<bool> {
+        // Like https://github.com/facebook/rocksdb/blob/8f0ab1598effd4b05f6f88310c7bd9aaf5d418c6/java/rocksjni/rocksjni.cc#L1903
+        let db = self.db.rocksdb().inner().as_raw_db();
+        let table = self.table_handle(table);
+        let key = key.as_ref();
+
+        // key_may_exist returns false when it's certain the key definitely doesn't exist.
+        if !db.key_may_exist_cf(table, key) {
+            return Ok(false);
+        }
+
+        Ok(db
+            .get_pinned_cf(table, key)
+            .map_err(|error| StorageError::Generic(error.into()))?
+            .is_some())
+    }
+
     fn get_durable<K: AsRef<[u8]>>(
         &self,
         table: TableKind,
@@ -929,6 +947,12 @@ impl StorageAccess for PartitionStoreTransaction<'_> {
             .map_err(|error| StorageError::Generic(error.into()))
     }
 
+    #[inline]
+    fn exists<K: AsRef<[u8]>>(&self, table: TableKind, key: K) -> Result<bool> {
+        // Can't do better than this, because I can't use key_may_exists here.
+        self.get(table, key).map(|option| option.is_some())
+    }
+
     fn get_durable<K: AsRef<[u8]>>(
         &self,
         _table: TableKind,
@@ -972,6 +996,8 @@ pub(crate) trait StorageAccess {
     fn cleared_value_buffer_mut(&mut self, min_size: usize) -> &mut BytesMut;
 
     fn get<K: AsRef<[u8]>>(&self, table: TableKind, key: K) -> Result<Option<DBPinnableSlice>>;
+
+    fn exists<K: AsRef<[u8]>>(&self, table: TableKind, key: K) -> Result<bool>;
 
     /// Forces a read from persistent storage, bypassing memtables and block cache.
     ///
@@ -1055,6 +1081,18 @@ pub(crate) trait StorageAccess {
             }
             Err(err) => Err(err),
         }
+    }
+
+    #[inline]
+    fn key_exists<K>(&mut self, key: K) -> Result<bool>
+    where
+        K: TableKey,
+    {
+        let mut buf = self.cleared_key_buffer_mut(key.serialized_length());
+        key.serialize_to(&mut buf);
+        let buf = buf.split();
+
+        self.exists(K::TABLE, &buf)
     }
 
     /// Forces a read from persistent storage, bypassing memtables and block cache.
