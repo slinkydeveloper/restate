@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         options.data_dir.as_ref().unwrap().display()
     );
 
-    let restate = Restate::create(options).await?;
+    let restate = Restate::start(options).await?;
     println!("** Bound addresses **");
     print_addresses(&restate.get_bound_addresses());
 

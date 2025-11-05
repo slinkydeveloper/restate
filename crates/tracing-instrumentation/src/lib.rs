@@ -13,9 +13,10 @@ mod pretty;
 #[cfg(feature = "prometheus")]
 pub mod prometheus_metrics;
 
-use std::env;
 use std::fmt::Display;
+use std::io::Write;
 use std::sync::OnceLock;
+use std::{env, io};
 
 use exporter::RuntimeModifierSpanExporter;
 use opentelemetry::trace::TracerProvider;
@@ -25,7 +26,7 @@ use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::runtime;
 use opentelemetry_sdk::trace::{SdkTracerProvider, TraceError};
 use pretty::Pretty;
-use tracing::{Level, warn};
+use tracing::{Level, warn, debug};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::filter::{Filtered, ParseError};
 use tracing_subscriber::fmt::time::SystemTime;
@@ -272,6 +273,26 @@ pub fn init_tracing_and_logging(
     common_opts: &CommonOptions,
     _service_name: impl Display,
 ) -> Result<TracingGuard, Error> {
+    init_tracing_and_logging_with_custom_writers(
+        common_opts,
+        _service_name,
+        io::stdout(),
+        io::stderr(),
+    )
+}
+
+/// Instruments the process with logging and tracing. The method returns [`TracingGuard`] which
+/// unregisters the tracing when being shut down or dropped.
+///
+/// # Panics
+/// This method will panic if there is already a global subscriber configured. Moreover, it will
+/// panic if it is executed outside of a Tokio runtime.
+pub fn init_tracing_and_logging_with_custom_writers(
+    common_opts: &CommonOptions,
+    _service_name: impl Display,
+    stdout_writer: impl Write + Send + 'static,
+    stderr_writer: impl Write + Send + 'static,
+) -> Result<TracingGuard, Error> {
     let layers = tracing_subscriber::registry();
 
     // Console subscriber layer
@@ -321,8 +342,8 @@ pub fn init_tracing_and_logging(
     // Note: when enabling this again we need to make sure it's integrated with the shutdown logic
 
     // Logging Layer
-    let (stdout_writer, _stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
-    let (stderr_writer, _stderr_guard) = tracing_appender::non_blocking(std::io::stderr());
+    let (stdout_writer, _stdout_guard) = tracing_appender::non_blocking(stdout_writer);
+    let (stderr_writer, _stderr_guard) = tracing_appender::non_blocking(stderr_writer);
 
     let log_filter = EnvFilter::try_new(&common_opts.log_filter)?;
 

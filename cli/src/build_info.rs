@@ -14,7 +14,7 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 use restate_cli_util::c_println;
-use restate_types::SemanticRestateVersion;
+use restate_types::{RestateVersion, SemanticRestateVersion};
 
 /// The version of restate CLI.
 pub const RESTATE_CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -55,7 +55,15 @@ pub fn is_debug() -> bool {
     RESTATE_CLI_DEBUG == "true" && RESTATE_CLI_DEBUG_STRIPPED != Some("true")
 }
 
-pub async fn check_if_latest_version() {
+pub enum VersionCheckResult {
+    OnLatestVersion,
+    ShouldUpdate {
+        current_version: SemanticRestateVersion,
+        latest_version: SemanticRestateVersion,
+    },
+}
+
+pub async fn check_if_latest_version() -> VersionCheckResult {
     let octocrab = octocrab::instance();
     let Ok(mut latest) = octocrab
         .repos("restatedev", "restate")
@@ -63,7 +71,7 @@ pub async fn check_if_latest_version() {
         .get_latest()
         .await
     else {
-        return;
+        return VersionCheckResult::OnLatestVersion;
     };
 
     let current_version = SemanticRestateVersion::current().clone();
@@ -71,23 +79,18 @@ pub async fn check_if_latest_version() {
         // ignore if the tag is not a version
         let version_str = latest.tag_name.split_off(1);
         let Ok(latest_release) = SemanticRestateVersion::from_str(&version_str) else {
-            return;
+            return VersionCheckResult::OnLatestVersion;
         };
 
         if matches!(
             latest_release.cmp_precedence(&current_version),
             std::cmp::Ordering::Greater
         ) {
-            c_println!(
-                "📣⬆️A newer version was released at {}, v{}->v{}. Check it out at {}.",
-                current_version.to_string(),
-                latest_release.to_string(),
-                latest
-                    .published_at
-                    .map(|d| d.to_string())
-                    .unwrap_or("<unknown>".to_owned()),
-                latest.html_url.to_string()
-            );
+            return VersionCheckResult::ShouldUpdate {
+                current_version,
+                latest_version: latest_release,
+            };
         }
     }
+    VersionCheckResult::OnLatestVersion
 }

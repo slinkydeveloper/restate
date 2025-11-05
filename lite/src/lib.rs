@@ -10,13 +10,13 @@
 
 pub mod build_info;
 
+use anyhow::{Context, Result, bail};
 use std::num::NonZero;
 use std::path::PathBuf;
-
-use anyhow::{Result, bail};
+use tokio::io::{SimplexStream, WriteHalf};
 use tokio::runtime::Handle;
-use tokio::sync::Mutex;
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio_util::io::SyncIoBridge;
 use tracing::{debug, warn};
 
 use restate_core::TaskCenter;
@@ -25,9 +25,18 @@ use restate_core::TaskHandle;
 use restate_core::TaskKind;
 use restate_core::cancellation_token;
 use restate_core::task_center;
+use restate_errors::fmt::RestateCode;
 use restate_node::Node;
 use restate_rocksdb::RocksDbManager;
+use restate_tracing_instrumentation::{
+    init_tracing_and_logging, init_tracing_and_logging_with_custom_writers,
+};
 use restate_types::PlainNodeId;
+use restate_types::config::{
+    BifrostOptionsBuilder, CommonOptionsBuilder, Configuration, ConfigurationBuilder, ListenMode,
+    ListenerOptionsBuilder, PRODUCTION_PROFILE_DEFAULTS,
+};
+use restate_types::config_loader::ConfigLoaderBuilder;
 use restate_types::live::Live;
 use restate_types::logs::metadata::ProviderKind;
 use restate_types::net::address::AdminPort;
@@ -41,11 +50,6 @@ use restate_types::net::listener::AddressBook;
 use restate_types::net::listener::Addresses;
 use restate_types::nodes_config::Role;
 use restate_types::replication::ReplicationProperty;
-
-use restate_types::config::{
-    BifrostOptionsBuilder, CommonOptionsBuilder, Configuration, ConfigurationBuilder, ListenMode,
-    ListenerOptionsBuilder,
-};
 
 pub(crate) static RESTATE_RUNNING: Mutex<bool> = const { Mutex::const_new(false) };
 
@@ -64,11 +68,20 @@ pub struct AddressMeta {
 }
 
 #[derive(Debug)]
+pub struct LoggingOptions {
+    pub log_filter: String,
+    pub stdout: WriteHalf<SimplexStream>,
+    pub stderr: WriteHalf<SimplexStream>,
+}
+
+#[derive(Debug)]
 pub struct Options {
     pub use_random_ports: bool,
     pub enable_tcp: bool,
     pub memory_budget: NonZero<usize>,
     pub data_dir: Option<PathBuf>,
+    pub node_name: Option<String>,
+    pub logging: Option<LoggingOptions>,
 }
 
 impl Default for Options {
@@ -78,6 +91,8 @@ impl Default for Options {
             use_random_ports: false,
             enable_tcp: false,
             data_dir: None,
+            node_name: None,
+            logging: None,
         }
     }
 }
@@ -150,7 +165,7 @@ impl Restate {
         addresses
     }
 
-    pub async fn create(opts: Options) -> Result<Restate> {
+    pub async fn start(opts: Options) -> Result<Restate> {
         if rlimit::increase_nofile_limit(u64::MAX).is_err() {
             warn!("Failed to increase the number of open file descriptors limit.");
         }
@@ -165,8 +180,9 @@ impl Restate {
             .build()
             .unwrap();
 
-        let mut common_builder = CommonOptionsBuilder::default();
+        // ------ Configuration -------
 
+        let mut common_builder = CommonOptionsBuilder::default();
         common_builder
             .roles(Role::Worker | Role::HttpIngress | Role::MetadataServer | Role::Admin)
             .rocksdb_total_memory_size(opts.memory_budget)
@@ -178,30 +194,34 @@ impl Restate {
             .default_replication(ReplicationProperty::new(NonZero::new(1).unwrap()))
             .disable_prometheus(true);
 
+        if let Some(LoggingOptions { log_filter, .. }) = &opts.logging {
+            common_builder.log_filter(log_filter.clone());
+        }
+
         if let Some(data_dir) = opts.data_dir {
             common_builder.base_dir(data_dir);
         }
 
-        let common = common_builder.build()?;
-
-        let bifrost = BifrostOptionsBuilder::default()
-            .default_provider(ProviderKind::Local)
-            .disable_auto_improvement(true)
+        let default_config = ConfigurationBuilder::default()
+            .common(common_builder.build()?)
+            .bifrost(
+                BifrostOptionsBuilder::default()
+                    .default_provider(ProviderKind::Local)
+                    .disable_auto_improvement(true)
+                    .build()
+                    .unwrap(),
+            )
             .build()
             .unwrap();
 
-        let mut config = ConfigurationBuilder::default()
-            .common(common)
-            .bifrost(bifrost)
+        // Use the config loader to load eventual env variable overrides
+        let config = ConfigLoaderBuilder::default()
+            .custom_default(default_config)
+            .load_env(true)
             .build()
-            .unwrap();
-
-        // apply config cascading propagation
-        config.common.set_derived_values()?;
-        config.ingress.set_derived_values(&config.common);
-        config.admin.set_derived_values(&config.common);
-        let config = config.apply_cascading_values();
-        config.validate()?;
+            .unwrap()
+            .load_once()
+            .context("failed to load configuration")?;
 
         let task_center = TaskCenterBuilder::default()
             .default_runtime_handle(Handle::current())
@@ -241,7 +261,14 @@ impl Restate {
         let task = task_center.to_handle().spawn_unmanaged_child(
             TaskKind::SystemBoot,
             "restate",
-            run_restate(config.clone(), data_dir, address_book, started, stopped),
+            run_restate(
+                config.clone(),
+                data_dir,
+                address_book,
+                opts.logging.map(|logging| (logging.stdout, logging.stderr)),
+                started,
+                stopped,
+            ),
         )?;
 
         // mark restate as running
@@ -325,6 +352,7 @@ async fn run_restate(
     config: Configuration,
     data_dir: PathBuf,
     address_book: AddressBook,
+    stdout_and_stderr: Option<(WriteHalf<SimplexStream>, WriteHalf<SimplexStream>)>,
     started: oneshot::Sender<()>,
     stopped: oneshot::Sender<Result<()>>,
 ) -> Result<()> {
@@ -333,6 +361,20 @@ async fn run_restate(
         "Starting Restate {}",
         build_info::build_info()
     );
+
+    let _tracing_guard = if let Some((stdout, stderr)) = stdout_and_stderr {
+        // Apply tracing config globally
+        // We need to apply this first to log correctly
+        Some(init_tracing_and_logging_with_custom_writers(
+            &config.common,
+            "restate-server",
+            SyncIoBridge::new(stdout),
+            SyncIoBridge::new(stderr),
+        )
+        .expect("failed to configure logging and tracing"))
+    } else {
+        None
+    };
 
     // Initialize rocksdb manager
     let rocksdb_manager = RocksDbManager::init();
@@ -368,6 +410,7 @@ async fn run_restate(
         },
     }
 
+    drop(_tracing_guard);
     Ok(())
 }
 

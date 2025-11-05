@@ -95,15 +95,15 @@ impl CliContext {
         dialoguer::console::set_colors_enabled(colorful);
 
         // Setup logging from env and from -v .. -vvvv
-        if let Err(err) = tracing_subscriber::fmt()
-            .with_writer(std::io::stderr)
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .with_max_level(opts.verbose.log_level_filter().as_trace())
-            .with_ansi(colorful)
-            .try_init()
-        {
-            warn!("Failed to initialize tracing subscriber: {}", err);
-        }
+        // if let Err(err) = tracing_subscriber::fmt()
+        //     .with_writer(std::io::stderr)
+        //     .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        //     .with_max_level(opts.verbose.log_level_filter().as_trace())
+        //     .with_ansi(colorful)
+        //     .try_init()
+        // {
+        //     warn!("Failed to initialize tracing subscriber: {}", err);
+        // }
 
         // We only log after we've initialized the logger with the desired log
         // level.

@@ -17,9 +17,9 @@ dist = true
 formula = "restate"
 
 [features]
-default = ["cloud", "no-trace-logging"]
+default = ["cloud", "no-trace-logging", "dev-cmd"]
 # enables restate dev/up command
-dev-cmd = ["restate-lite", "mock-service-endpoint"]
+dev-cmd = ["restate-lite"]
 cloud = []
 no-trace-logging = ["tracing/max_level_trace", "tracing/release_max_level_debug"]
 
@@ -33,9 +33,9 @@ restate-serde-util = { workspace = true }
 restate-time-util = { workspace = true }
 restate-types = { workspace = true }
 restate-lite = { workspace = true, optional = true }
-mock-service-endpoint = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
+ansi-to-tui = "7.0"
 arc-swap = { workspace = true }
 arrow = { workspace = true, features = ["ipc", "prettyprint", "json"] }
 axum = { workspace = true, default-features = false, features = ["http1", "http2", "query", "tokio"] }
@@ -50,7 +50,7 @@ cling = { workspace = true }
 comfy-table = { workspace = true }
 const_format = "0.2.32"
 convert_case = "0.6"
-crossterm = { workspace = true }
+crossterm = { workspace = true, features = ["event-stream"] }
 ctrlc = { version = "3.4.1" }
 dialoguer = { workspace = true }
 dirs = { version = "5.0" }
@@ -65,6 +65,7 @@ itertools = { workspace = true }
 json-patch = "2.0.0"
 octocrab = { version = "0.44.0", features = ["stream"] }
 open = "5.1.2"
+ratatui = "0.29.0"
 reqwest = { workspace = true, default-features = false, features = ["json", "rustls-tls", "stream", "http2"] }
 rustls = { workspace = true, features = ["aws-lc-rs"]}
 serde = { workspace = true }

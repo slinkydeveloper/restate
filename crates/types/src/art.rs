@@ -30,7 +30,20 @@ pub const RESTATE_LOGO_ART: &str = r###"
     →↓→↓→↓→               →↓→↓→↓→↓→↓→
     →↓→↓→↓→                →↓→↓→↓→
     ↓→↓→↓→↓
-     →↓→→
+"###;
+
+pub const RESTATE_LOGO_ART_SMALL: &str = r###"
+     →↓→↓
+    →↓→↓→↓→→→              →→→→
+    ↓→↓→↓→↓↓→↓→→          →↓↓→↓→↓→
+    →↓→↓→↓→↓→↓↓→↓→↓      →↓→↓→↓→↓→↓→
+    →↓→↓→↓→ →↓→↓→↓→↓→↓→↓→     →↓→↓→↓→↓↓→↓→↗
+    →↓→↓→↓→    →↓→↓→↓→↓→↓→↓→    →→↓→↓→↓→↓↓→↓→
+    →↓→↓→↓→       →↓→↓→↓→↓→↓→↓→    →→↓→↓→↓→↓→↓→→
+    →↓→↓→↓→       →→↓→↓→↓→↓→↓→→    →↓→↓→↓→↓→↓→→
+    →↓→↓→↓→      ↓→↓→→         →↓→↓→↓→↓→↓→→
+    →↓→↓→↓→                  →↓→↓→↓→
+    ↓→↓→↓→↓
 "###;
 
 pub fn render_restate_logo(ansi_color: bool) -> String {
@@ -38,5 +51,13 @@ pub fn render_restate_logo(ansi_color: bool) -> String {
         RESTATE_LOGO_ART.gradient(Gradient::Mind).to_string()
     } else {
         RESTATE_LOGO_ART.to_owned()
+    }
+}
+
+pub fn render_restate_logo_small(ansi_color: bool) -> String {
+    if ansi_color {
+        RESTATE_LOGO_ART_SMALL.gradient(Gradient::Mind).to_string()
+    } else {
+        RESTATE_LOGO_ART_SMALL.to_owned()
     }
 }
