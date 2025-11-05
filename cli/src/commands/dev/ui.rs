@@ -37,8 +37,6 @@ use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
 const MAX_LOG_LINES: usize = 5000;
-const LOG_GENERATION_MIN_MS: u64 = 100;
-const LOG_GENERATION_MAX_MS: u64 = 500;
 
 struct TuiState {
     auto_registration_state: String,
@@ -59,8 +57,6 @@ struct TuiState {
     memory_usage: f64,
     /// Last known viewport height for log viewer
     viewport_height: usize,
-    /// Accumulated scroll delta (for debouncing)
-    scroll_accumulator: i32,
 }
 
 impl TuiState {
@@ -75,8 +71,7 @@ impl TuiState {
             request_count: 0,
             service_count: 3,
             memory_usage: 45.2,
-            viewport_height: 10, // Will be updated on first render
-            scroll_accumulator: 0,
+            viewport_height: 10,
         }
     }
 
@@ -88,7 +83,7 @@ impl TuiState {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(15), // Top info boxes
+                Constraint::Length(18), // Top info boxes
                 Constraint::Min(10),    // Log viewer (takes remaining space)
                 Constraint::Length(3),  // Bottom help bar
             ])
@@ -417,16 +412,6 @@ impl TuiState {
             }
         }
     }
-
-    /// Apply accumulated scroll with debouncing
-    fn apply_accumulated_scroll(&mut self) {
-        if self.scroll_accumulator > 0 {
-            self.scroll_up(self.scroll_accumulator as usize);
-        } else {
-            self.scroll_down((-self.scroll_accumulator) as usize);
-        }
-        self.scroll_accumulator = 0;
-    }
 }
 
 pub async fn run(
@@ -482,9 +467,6 @@ impl AppState {
         // Create event stream for crossterm
         let mut event_stream = EventStream::new();
 
-        // Create debounce interval (50ms)
-        let mut debounce_interval = interval(Duration::from_millis(50));
-
         let mut stdout_lines = BufReader::new(stdout_reader).lines();
         pin!(stdout_lines);
         let mut stderr_lines = BufReader::new(stderr_reader).lines();
@@ -503,7 +485,7 @@ impl AppState {
                     self.tui_state.append_log_message(log_line);
                 }
 
-                // Handle crossterm events (keyboard/mouse)
+                // Handle crossterm keyboard events
                 Some(Ok(event)) = event_stream.next() => {
                     self.handle_event(event);
                 }
@@ -514,13 +496,8 @@ impl AppState {
                 },
 
                 // Handle version check
-                Ok(version) = &mut restate_version_rx => {
+                Ok(version) = &mut restate_version_rx, if !restate_version_rx.is_terminated() => {
                     self.handle_version_check(version);
-                }
-
-                // Handle scroll debounce timer
-                _ = debounce_interval.tick(), if self.tui_state.scroll_accumulator != 0 => {
-                    self.tui_state.apply_accumulated_scroll();
                 }
             }
         }
@@ -534,7 +511,6 @@ impl AppState {
     fn handle_event(&mut self, event: Event) {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key_event(key),
-            Event::Mouse(mouse) => self.handle_mouse_event(mouse),
             Event::Resize(_, _) => {}
             _ => {}
         }
@@ -558,20 +534,6 @@ impl AppState {
             (_, KeyCode::Char('r')) => self.tui_state.enable_auto_scroll(),
             (_, KeyCode::End) => self.tui_state.scroll_to_top(),
 
-            _ => {}
-        }
-    }
-
-    fn handle_mouse_event(&mut self, mouse: crossterm::event::MouseEvent) {
-        match mouse.kind {
-            MouseEventKind::ScrollUp => {
-                // Accumulate scroll events for debouncing
-                self.tui_state.scroll_accumulator += 3;
-            }
-            MouseEventKind::ScrollDown => {
-                // Accumulate scroll events for debouncing
-                self.tui_state.scroll_accumulator -= 3;
-            }
             _ => {}
         }
     }

@@ -33,7 +33,6 @@ pub const RESTATE_LOGO_ART: &str = r###"
 "###;
 
 pub const RESTATE_LOGO_ART_SMALL: &str = r###"
-     →↓→↓
     →↓→↓→↓→→→              →→→→
     ↓→↓→↓→↓↓→↓→→          →↓↓→↓→↓→
     →↓→↓→↓→↓→↓↓→↓→↓      →↓→↓→↓→↓→↓→
