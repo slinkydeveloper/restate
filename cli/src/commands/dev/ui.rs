@@ -70,7 +70,7 @@ impl TuiState {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(17), // Top info boxes
+                Constraint::Length(15), // Top info boxes
                 Constraint::Min(10),    // Log viewer (takes remaining space)
                 Constraint::Length(3),  // Bottom help bar
             ])
@@ -100,7 +100,7 @@ impl TuiState {
             text.push_line(Line::default());
             text.push_line(
                 Line::from(vec![
-                    Span::styled("Version: ", Style::default().fg(Color::Gray)),
+                    Span::styled("    Version: ", Style::default().fg(Color::Gray)),
                     Span::styled(SemanticRestateVersion::current().to_string(), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                     Span::styled(format!(" ({})", self.restate_version_check_state), Style::default().fg(Color::Gray)),
                 ]),
