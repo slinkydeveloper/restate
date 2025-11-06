@@ -19,21 +19,17 @@ use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 use reqwest::Client;
 use restate_lite::Restate;
 use restate_types::{art, SemanticRestateVersion};
 use std::collections::VecDeque;
-use std::fmt::format;
-use std::time::Duration;
-use thiserror::__private17::AsDisplay;
 use tokio::io::{AsyncBufReadExt, BufReader, ReadHalf, SimplexStream};
 use tokio::pin;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot;
-use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
 const MAX_LOG_LINES: usize = 5000;
@@ -42,19 +38,13 @@ struct TuiState {
     auto_registration_state: String,
     restate_version_check_state: String,
     /// Log buffer with max size
-    logs: VecDeque<String>,
+    logs: VecDeque<Line<'static>>,
     /// Current scroll position (0 = bottom/latest)
     scroll_offset: usize,
     /// Auto-scroll enabled
     auto_scroll: bool,
     /// Start time for uptime calculation
     start_time: DateTime<Local>,
-    /// Mock request counter
-    request_count: u64,
-    /// Mock service counter
-    service_count: u32,
-    /// Mock memory usage in MB
-    memory_usage: f64,
     /// Last known viewport height for log viewer
     viewport_height: usize,
 }
@@ -68,9 +58,6 @@ impl TuiState {
             scroll_offset: 0,
             auto_scroll: true,
             start_time: Local::now(),
-            request_count: 0,
-            service_count: 3,
-            memory_usage: 45.2,
             viewport_height: 10,
         }
     }
@@ -83,7 +70,7 @@ impl TuiState {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(18), // Top info boxes
+                Constraint::Length(17), // Top info boxes
                 Constraint::Min(10),    // Log viewer (takes remaining space)
                 Constraint::Length(3),  // Bottom help bar
             ])
@@ -124,7 +111,7 @@ impl TuiState {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Blue))
-                .title(" Restate dev ")
+                .title(" Restate ")
                 .title_style(
                     Style::default()
                         .fg(Color::Blue)
@@ -145,49 +132,19 @@ impl TuiState {
         );
 
         let status_text = vec![
-            Line::from(""),
             Line::from(vec![
                 Span::styled("Uptime:          ", Style::default().fg(Color::Gray)),
                 Span::styled(
                     &uptime_str,
                     Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Requests:        ", Style::default().fg(Color::Gray)),
-                Span::styled(
-                    format!("{}", self.request_count),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Services:        ", Style::default().fg(Color::Gray)),
-                Span::styled(
-                    format!("{}", self.service_count),
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Memory Usage:    ", Style::default().fg(Color::Gray)),
-                Span::styled(
-                    format!("{:.1} MB", self.memory_usage),
-                    Style::default()
-                        .fg(Color::Magenta)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(vec![
                 Span::styled("Registration:    ", Style::default().fg(Color::Gray)),
                 Span::styled(
-                    "Ready",
+                    self.auto_registration_state.clone(),
                     Style::default()
-                        .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
@@ -226,24 +183,14 @@ impl TuiState {
         let title = format!(" Logs ({} lines) {}", log_count, scroll_indicator);
 
         // Determine which logs to show
-        let logs_to_show: Vec<Line> = if self.auto_scroll {
+        let logs_to_show: Text = if self.auto_scroll {
             // Show the most recent logs
             self.logs
                 .iter()
                 .rev()
                 .take(visible_height)
                 .rev()
-                .map(|log| {
-                    // Parse ANSI escape codes in log lines
-                    match log.as_str().into_text() {
-                        Ok(text) => text
-                            .lines
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| Line::from(log.clone())),
-                        Err(_) => Line::from(log.clone()),
-                    }
-                })
+                .cloned()
                 .collect()
         } else {
             // Show logs based on scroll offset
@@ -254,17 +201,7 @@ impl TuiState {
                 .iter()
                 .skip(start_idx)
                 .take(end_idx - start_idx)
-                .map(|log| {
-                    // Parse ANSI escape codes in log lines
-                    match log.as_str().into_text() {
-                        Ok(text) => text
-                            .lines
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| Line::from(log.clone())),
-                        Err(_) => Line::from(log.clone()),
-                    }
-                })
+                .cloned()
                 .collect()
         };
 
@@ -401,7 +338,17 @@ impl TuiState {
             self.scroll_offset += 1;
         }
 
-        self.logs.push_back(log_line);
+        // Convert log line string to Line
+        match log_line.as_str().into_text() {
+            Ok(text) => {
+                for line in text.lines {
+                    self.logs.push_back(line);
+                }
+            },
+            Err(_) => {
+                self.logs.push_back(Line::from(log_line))
+            },
+        }
 
         // Trim logs if exceeding max size
         if self.logs.len() > MAX_LOG_LINES {
