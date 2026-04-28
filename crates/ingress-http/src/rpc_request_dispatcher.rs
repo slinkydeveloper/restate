@@ -10,7 +10,11 @@
 
 use super::{RequestDispatcher, RequestDispatcherError};
 
+use futures::future::try_join_all;
+use restate_core::network::TransportConnect;
+use restate_ingestion_client::IngestionClient;
 use restate_types::identifiers::{InvocationId, PartitionProcessorRpcRequestId, WithInvocationId};
+use restate_types::identifiers::WithPartitionKey;
 use restate_types::invocation::client::{
     AttachInvocationResponse, GetInvocationOutputResponse, InvocationClient, InvocationClientError,
     InvocationOutput, SubmittedInvocationNotification,
@@ -18,42 +22,46 @@ use restate_types::invocation::client::{
 use restate_types::invocation::{InvocationQuery, InvocationRequest, InvocationResponse};
 use restate_types::journal_v2::Signal;
 use restate_types::retries::RetryPolicy;
+use restate_wal_protocol::Envelope;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{Instrument, debug_span, trace};
 
-pub struct InvocationClientRequestDispatcher<IC> {
+pub struct InvocationClientRequestDispatcher<IC, T> {
     invocation_client: IC,
+    ingestion_client: IngestionClient<T, Envelope>,
     retry_policy: RetryPolicy,
 }
 
-impl<IC: Clone> Clone for InvocationClientRequestDispatcher<IC> {
+impl<IC: Clone, T: Clone> Clone for InvocationClientRequestDispatcher<IC, T> {
     fn clone(&self) -> Self {
         InvocationClientRequestDispatcher {
             invocation_client: self.invocation_client.clone(),
+            ingestion_client: self.ingestion_client.clone(),
             retry_policy: self.retry_policy.clone(),
         }
     }
 }
 
-impl<IC> InvocationClientRequestDispatcher<IC> {
-    pub fn new(invocation_client: IC) -> Self {
+impl<IC, T> InvocationClientRequestDispatcher<IC, T> {
+    pub fn new(invocation_client: IC, ingestion_client: IngestionClient<T, Envelope>) -> Self {
         Self {
             invocation_client,
+            ingestion_client,
             // TODO figure out how to tune this?
             retry_policy: RetryPolicy::fixed_delay(Duration::from_millis(50), None),
         }
     }
 
-    async fn execute_rpc<Fn, Fut, T>(
+    async fn execute_rpc<Fn, Fut, U>(
         &self,
         is_idempotent: bool,
         operation: Fn,
-    ) -> Result<T, RequestDispatcherError>
+    ) -> Result<U, RequestDispatcherError>
     where
         Fn: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, InvocationClientError>>,
+        Fut: Future<Output = Result<U, InvocationClientError>>,
     {
         Ok(self
             .retry_policy
@@ -74,9 +82,10 @@ impl<IC> InvocationClientRequestDispatcher<IC> {
     }
 }
 
-impl<IC> RequestDispatcher for InvocationClientRequestDispatcher<IC>
+impl<IC, T> RequestDispatcher for InvocationClientRequestDispatcher<IC, T>
 where
     IC: InvocationClient + Clone + Send + Sync + 'static,
+    T: TransportConnect,
 {
     async fn send(
         &self,
@@ -160,5 +169,25 @@ where
         })
             .instrument(debug_span!("send invocation response", %request_id, invocation_id = %target_invocation))
             .await
+    }
+
+    async fn push_batch(&self, envelopes: Vec<Envelope>) -> Result<(), RequestDispatcherError> {
+        // Submit every envelope into the ingestion session manager, then await all
+        // partition-processor commits as a single joined future. The caller hands
+        // us the whole batch and gets back one Future for the lot.
+        let mut client = self.ingestion_client.clone();
+        let mut commits = Vec::with_capacity(envelopes.len());
+        for env in envelopes {
+            let pk = env.partition_key();
+            let commit = client
+                .ingest(pk, env)
+                .await
+                .map_err(|err| RequestDispatcherError::Internal(anyhow::Error::from(err)))?;
+            commits.push(commit);
+        }
+        try_join_all(commits)
+            .await
+            .map_err(|err| RequestDispatcherError::Internal(anyhow::Error::from(err)))?;
+        Ok(())
     }
 }

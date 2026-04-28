@@ -13,6 +13,7 @@ mod error;
 mod health;
 mod invocation;
 mod path_parsing;
+mod push;
 mod responses;
 mod service_handler;
 #[cfg(test)]
@@ -92,6 +93,7 @@ where
                 RequestType::Workflow(workflow_request) => {
                     this.handle_workflow(req, workflow_request).await
                 }
+                RequestType::Push => this.handle_push(req).await,
             }
         }
         .map(|r| Ok::<_, Infallible>(r.unwrap_or_else(|e| e.into_response())))

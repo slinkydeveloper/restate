@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>dev.restate.sample</groupId>
+    <artifactId>kafka-consumer</artifactId>
+    <version>0.1.0</version>
+    <packaging>jar</packaging>
+
+    <description>
+        POC Kafka consumer that drives Restate's POST /restate/push endpoint.
+    </description>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <protobuf.version>4.34.1</protobuf.version>
+        <kafka.version>4.2.0</kafka.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <protobuf-maven-plugin.version>5.1.3</protobuf-maven-plugin.version>
+        <jib-maven-plugin.version>3.5.1</jib-maven-plugin.version>
+        <main.class>dev.restate.sample.kafka.App</main.class>
+        <image.name>kafka-consumer</image.name>
+        <image.tag>latest</image.tag>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>${protobuf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java-util</artifactId>
+            <version>${protobuf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Compile push.proto under src/main/protobuf/ to Java sources via the
+                 ascopes protobuf-maven-plugin. protoc is auto-downloaded from Maven Central. -->
+            <plugin>
+                <groupId>io.github.ascopes</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>${protobuf-maven-plugin.version}</version>
+                <configuration>
+                    <protoc combine.self="override" kind="binary-maven">
+                        <version>${protobuf.version}</version>
+                    </protoc>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Build a Docker image without writing a Dockerfile. Use:
+                   mvn -B compile jib:dockerBuild
+                 to build into the local Docker daemon, or
+                   mvn -B compile jib:build -Dimage.name=registry.example/kafka-consumer
+                 to push directly to a registry. -->
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <version>${jib-maven-plugin.version}</version>
+                <configuration>
+                    <from>
+                        <!-- Distroless Java 21 runtime — smallest practical base. -->
+                        <image>gcr.io/distroless/java21-debian12:nonroot</image>
+                    </from>
+                    <to>
+                        <image>${image.name}:${image.tag}</image>
+                    </to>
+                    <container>
+                        <mainClass>${main.class}</mainClass>
+                        <jvmFlags>
+                            <jvmFlag>-XX:+ExitOnOutOfMemoryError</jvmFlag>
+                        </jvmFlags>
+                    </container>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

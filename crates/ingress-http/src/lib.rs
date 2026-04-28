@@ -29,6 +29,7 @@ use restate_types::invocation::client::{
 use restate_types::invocation::{InvocationQuery, InvocationRequest, InvocationResponse};
 use restate_types::journal_v2::Signal;
 use restate_types::net::address::SocketAddress;
+use restate_wal_protocol::Envelope;
 
 /// Client connection information for a given RPC request
 #[derive(Clone, Debug)]
@@ -103,6 +104,15 @@ pub trait RequestDispatcher {
         &self,
         target_invocation: InvocationId,
         signal: Signal,
+    ) -> impl Future<Output = Result<(), RequestDispatcherError>> + Send;
+
+    /// Append a batch of pre-built envelopes to bifrost. Resolves once every
+    /// envelope has been committed by its partition processor (or one fails);
+    /// the implementation handles per-envelope partitioning, ingest scheduling,
+    /// and commit synchronization internally — callers see a single future.
+    fn push_batch(
+        &self,
+        envelopes: Vec<Envelope>,
     ) -> impl Future<Output = Result<(), RequestDispatcherError>> + Send;
 }
 
@@ -335,6 +345,13 @@ mod mocks {
             signal: Signal,
         ) -> impl Future<Output = Result<(), RequestDispatcherError>> + Send {
             MockRequestDispatcher::send_signal(self, target_invocation, signal)
+        }
+
+        fn push_batch(
+            &self,
+            envelopes: Vec<Envelope>,
+        ) -> impl Future<Output = Result<(), RequestDispatcherError>> + Send {
+            MockRequestDispatcher::push_batch(self, envelopes)
         }
     }
 }

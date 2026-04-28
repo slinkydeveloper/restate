@@ -1,0 +1,78 @@
+// Copyright (c) 2023 - 2026 Restate Software, Inc., Restate GmbH.
+// All rights reserved.
+//
+// Use of this software is governed by the Business Source License
+// included in the LICENSE file.
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0.
+
+syntax = "proto3";
+
+package restate.ingress.push.v1;
+
+// POC batch invocation push API. The producer ships only the bits the runtime
+// genuinely cannot infer (target service/handler, optional key, body, headers,
+// idempotency / scheduling controls). Handler type, retention durations, and
+// other schema-driven attributes are looked up server-side from the schema
+// registry.
+//
+// Endpoint: POST /restate/push
+// Content-Type negotiation (Connect-style):
+//   application/proto | application/protobuf  -> binary
+//   application/json                          -> proto3 JSON
+// Response echoes the request CT.
+// On full batch append: HTTP 202 Accepted + BatchPushResponse.
+message BatchPushRequest {
+  // 16-byte big-endian u128 producer ID. Required — the runtime rejects requests
+  // with an empty or non-16-byte value. Carried through to per-item DedupInformation
+  // when an item supplies a sequence_number; otherwise present purely for
+  // observability and producer attribution.
+  bytes producer_id = 1;
+
+  repeated PushItem items = 2;
+}
+
+// Empty for now. Reserved field numbers leave room for forward-compatible
+// per-item ack lists, backpressure hints, etc.
+message BatchPushResponse {
+  reserved 1 to 15;
+}
+
+message PushItem {
+  // Optional dedup sequence number. Items with a sequence_number are routed
+  // deterministically by (BatchPushRequest.producer_id, sequence_number) and
+  // deduped at the partition processor; items without one get a fresh
+  // InvocationId and bypass DedupInformation.
+  optional uint64 sequence_number = 1;
+
+  InvocationTarget target = 2;
+  repeated Header headers = 3;
+  optional string idempotency_key = 4;
+  // Millis since unix epoch; unset => execute immediately.
+  optional uint64 execution_time_unix_millis = 5;
+  // Empty/missing => LimitKey::None.
+  optional string limit_key = 6;
+
+  // Body of restate_types::invocation::InvocationRequest.
+  bytes body = 7;
+}
+
+message Header {
+  string name = 1;
+  string value = 2;
+}
+
+// Service/handler tuple. The runtime resolves the service type
+// (Service / VirtualObject / Workflow) and the handler type
+// (Exclusive / Shared / Workflow) from the schema registry.
+//
+// `key` is required for VirtualObject and Workflow services and forbidden for
+// plain Service. The runtime rejects mismatches with HTTP 400.
+message InvocationTarget {
+  string service = 1;
+  string handler = 2;
+  optional string key = 3;
+  optional string scope = 4;
+}

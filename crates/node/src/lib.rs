@@ -361,6 +361,7 @@ impl Node {
                 &mut address_book,
                 tc.health().ingress_status(),
                 networking.clone(),
+                ingestion_client.clone(),
                 metadata.updateable_schema(),
                 metadata.updateable_partition_table(),
                 PartitionRouting::new(replica_set_states.clone(), tc.clone()),

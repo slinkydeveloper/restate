@@ -108,6 +108,23 @@ pub(crate) enum HandlerError {
     DispatcherError(#[from] RequestDispatcherError),
     #[error("bad scope value: {0}")]
     BadScopeValue(RestrictedValueError),
+    // --- /restate/push errors ---
+    #[error(
+        "unsupported Content-Type '{0}'. Use application/proto or application/protobuf for binary, or application/json for proto3 JSON."
+    )]
+    UnsupportedMediaType(String),
+    #[error("invalid protobuf body: {0}")]
+    BadProto(#[from] prost::DecodeError),
+    #[error("invalid JSON body: {0}")]
+    BadJson(#[source] serde_json::Error),
+    #[error("invalid producer_id: must be exactly 16 bytes (got {0})")]
+    BadProducerId(usize),
+    #[error("invalid invocation target: missing or empty `kind`")]
+    MissingTarget,
+    #[error("batch is empty")]
+    BatchEmpty,
+    #[error("ingestion failed: {message}")]
+    IngestionFailed { message: String },
 }
 
 // IMPORTANT! If you touch this, please update crates/types/src/schema/openapi.rs too
@@ -155,7 +172,14 @@ impl HandlerError {
             | HandlerError::InvalidLimitKey(_)
             | HandlerError::BadScopeValue(_)
             | HandlerError::BadPath(_)
-            | HandlerError::ScopeRequiresVQueues => StatusCode::BAD_REQUEST,
+            | HandlerError::ScopeRequiresVQueues
+            | HandlerError::BadProto(_)
+            | HandlerError::BadJson(_)
+            | HandlerError::BadProducerId(_)
+            | HandlerError::MissingTarget
+            | HandlerError::BatchEmpty => StatusCode::BAD_REQUEST,
+            HandlerError::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            HandlerError::IngestionFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             HandlerError::DispatcherError(_) => {
                 // TODO add more distinctions between different dispatcher errors (unavailable, etc)
                 StatusCode::INTERNAL_SERVER_ERROR

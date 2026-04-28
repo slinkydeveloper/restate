@@ -226,6 +226,9 @@ pub(crate) enum RequestType {
     Invocation(InvocationRequestType),
     Service(ServiceRequestType),
     Workflow(WorkflowRequestType),
+    /// Batch invocation push: `POST /restate/push`. POC endpoint for external
+    /// clients (e.g. byo Kafka consumers) to bulk-append invocations.
+    Push,
 }
 
 /// Parse the remainder of an `/api/v1/...` path after the `api/v1` prefix has
@@ -327,6 +330,12 @@ where
                 "workflow" => Ok(RequestType::Workflow(
                     WorkflowRequestType::from_path_chunks(segments)?,
                 )),
+                "push" => {
+                    if segments.next().is_some() {
+                        return Err(HandlerError::NotFound);
+                    }
+                    Ok(RequestType::Push)
+                }
                 _ => Err(HandlerError::NotFound),
             },
             "openapi" => Ok(RequestType::OpenAPI),
