@@ -577,39 +577,23 @@ where
             deployment_changed,
         ));
 
-        if chosen_service_protocol_version <= ServiceProtocolVersion::V3 {
-            // Protocol runner for service protocol <= v3
-            let service_protocol_runner =
-                ServiceProtocolRunner::new(self, chosen_service_protocol_version);
-            service_protocol_runner
-                .run(
-                    txn,
-                    journal_metadata,
-                    keyed_service_id,
-                    deployment,
-                    reader_for_bidi,
-                    invocation_budget,
-                )
-                .await
-        } else {
-            // Protocol runner for service protocol v4+
-            let service_protocol_runner = service_protocol_runner_v4::ServiceProtocolRunner::new(
-                self,
-                chosen_service_protocol_version,
-                &deployment.ty,
-                self.max_awaited_future_depth,
-            );
-            service_protocol_runner
-                .run(
-                    txn,
-                    journal_metadata,
-                    keyed_service_id,
-                    deployment,
-                    reader_for_bidi,
-                    invocation_budget,
-                )
-                .await
-        }
+        // Protocol runner for service protocol v4+
+        let service_protocol_runner = service_protocol_runner_v4::ServiceProtocolRunner::new(
+            self,
+            chosen_service_protocol_version,
+            &deployment.ty,
+            self.max_awaited_future_depth,
+        );
+        service_protocol_runner
+            .run(
+                txn,
+                journal_metadata,
+                keyed_service_id,
+                deployment,
+                reader_for_bidi,
+                invocation_budget,
+            )
+            .await
     }
 }
 
