@@ -360,7 +360,6 @@ impl Node {
                     partition_store_manager.clone(),
                     networking.clone(),
                     bifrost_svc.handle(),
-                    ingestion_client.clone(),
                     metadata_manager.writer(),
                     remote_scanner_manager.clone(),
                 )

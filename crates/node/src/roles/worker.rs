@@ -17,14 +17,12 @@ use restate_core::network::MessageRouterBuilder;
 use restate_core::network::Networking;
 use restate_core::network::TransportConnect;
 use restate_core::{MetadataWriter, TaskCenter, TaskKind};
-use restate_ingestion_client::IngestionClient;
 use restate_partition_store::PartitionStoreManager;
 use restate_storage_query_datafusion::context::QueryContext;
 use restate_storage_query_datafusion::remote_query_scanner_manager::RemoteScannerManager;
 use restate_types::health::HealthStatus;
 use restate_types::partitions::state::PartitionReplicaSetStates;
 use restate_types::protobuf::common::WorkerStatus;
-use restate_wal_protocol::Envelope;
 use restate_worker::{RuleBookCacheHandle, Worker};
 use restate_worker_api::ProcessorsManagerHandle;
 
@@ -54,7 +52,6 @@ where
         partition_store_manager: Arc<PartitionStoreManager>,
         networking: Networking<T>,
         bifrost: Bifrost,
-        ingestion_client: IngestionClient<T, Envelope>,
         metadata_writer: MetadataWriter,
         remote_scanner_manager: RemoteScannerManager,
     ) -> Result<Self, WorkerRoleBuildError> {
@@ -64,7 +61,6 @@ where
             partition_store_manager,
             networking,
             bifrost,
-            ingestion_client,
             router_builder,
             metadata_writer,
             remote_scanner_manager,
