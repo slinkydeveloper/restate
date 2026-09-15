@@ -673,24 +673,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-msk-iam-sasl-signer"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e62f2c07adf3f0bd1ad40414dd30fcf34c595d5f613e36011d5b62eeff14f490"
-dependencies = [
- "aws-config",
- "aws-credential-types",
- "aws-sdk-sts",
- "aws-sigv4",
- "aws-types",
- "base64 0.22.1",
- "chrono",
- "futures",
- "thiserror 1.0.69",
- "url",
-]
-
-[[package]]
 name = "aws-runtime"
 version = "1.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8065,37 +8047,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "restate-ingress-kafka"
-version = "1.8.0-rc.1"
-dependencies = [
- "anyhow",
- "aws-config",
- "aws-msk-iam-sasl-signer",
- "base64 0.23.1",
- "bytes",
- "derive_more",
- "futures",
- "metrics",
- "opentelemetry",
- "opentelemetry_sdk",
- "parking_lot",
- "rdkafka",
- "restate-core",
- "restate-ingestion-client",
- "restate-storage-api",
- "restate-timer-queue",
- "restate-tracing-instrumentation",
- "restate-types",
- "restate-util-string",
- "restate-wal-protocol",
- "restate-workspace-hack",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "xxhash-rust",
-]
-
-[[package]]
 name = "restate-invoker-impl"
 version = "1.8.0-rc.1"
 dependencies = [
@@ -9220,7 +9171,6 @@ dependencies = [
  "restate-futures-util",
  "restate-ingestion-client",
  "restate-ingress-http",
- "restate-ingress-kafka",
  "restate-invoker-impl",
  "restate-limiter",
  "restate-memory",
