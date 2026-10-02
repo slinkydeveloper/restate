@@ -22,10 +22,8 @@ mod commands;
 mod error;
 mod error_report;
 mod ui;
-mod util;
 
 pub use app::{CliApp, Command, command};
-pub use commands::kafka_integration_notice;
 pub use error_report::report_error;
 pub(crate) use restate_cli_util::ui::console;
 

@@ -17,7 +17,7 @@ use cling::prelude::*;
 use crossterm::execute;
 use rustls::crypto::aws_lc_rs;
 
-use restate_cli::{CliApp, Command};
+use restate_cli::CliApp;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> ExitCode {
@@ -65,12 +65,6 @@ async fn main() -> ExitCode {
     };
     let command = app.cmd.clone();
     let result = Cling::new(app).run().await.result();
-    if matches!(
-        command,
-        Command::KafkaClusters(_) | Command::Subscriptions(_)
-    ) {
-        restate_cli::kafka_integration_notice();
-    }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => restate_cli::report_error(err, Some(&command)),

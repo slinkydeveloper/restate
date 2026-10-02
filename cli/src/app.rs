@@ -147,12 +147,6 @@ pub enum Command {
         learn_more: "https://docs.restate.dev/services/versioning",
     ))]
     Deployments(deployments::Deployments),
-    /// Manage Kafka clusters
-    #[clap(subcommand)]
-    KafkaClusters(kafkaclusters::KafkaClusters),
-    /// Manage Kafka subscriptions
-    #[clap(subcommand)]
-    Subscriptions(subscriptions::Subscriptions),
     /// Inspect and manage invocations: list, describe, cancel, kill, pause, resume, ...
     ///
     /// An invocation is one request to a handler, with an `inv_...` id.

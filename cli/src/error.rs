@@ -22,9 +22,7 @@ use restate_cli_util::exit;
 
 use crate::app::Command;
 use crate::clients::{ApiError, ClientError, error_docs_url};
-use crate::commands::{
-    deployments, invocations, kafkaclusters, rules, services, subscriptions, vqueues,
-};
+use crate::commands::{deployments, invocations, rules, services, vqueues};
 use crate::ui::fmt::IncludeFormatting;
 
 /// The class of a failure: its process exit code and JSON `kind`.
@@ -110,22 +108,6 @@ impl ErrorKind {
                 if !matches!(cmd, invocations::Invocations::List(_)) =>
             {
                 step("restate invocations list", "see the current invocations")
-            }
-            (NotFound, Some(Command::Subscriptions(cmd)))
-                if !matches!(cmd, subscriptions::Subscriptions::List(_)) =>
-            {
-                step(
-                    "restate subscriptions list",
-                    "see the existing subscriptions",
-                )
-            }
-            (NotFound, Some(Command::KafkaClusters(cmd)))
-                if !matches!(cmd, kafkaclusters::KafkaClusters::List(_)) =>
-            {
-                step(
-                    "restate kafka-clusters list",
-                    "see the configured Kafka clusters",
-                )
             }
             (NotFound, Some(Command::VQueues(cmd)))
                 if !matches!(cmd, vqueues::VQueues::List(_)) =>
