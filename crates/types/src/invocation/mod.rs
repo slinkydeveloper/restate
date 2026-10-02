@@ -34,7 +34,7 @@ use crate::Scope;
 use crate::errors::InvocationError;
 use crate::identifiers::{
     DeploymentId, EntryIndex, IdempotencyId, InvocationId, PartitionKey,
-    PartitionProcessorRpcRequestId, ServiceId, SubscriptionId, WithInvocationId, WithPartitionKey,
+    PartitionProcessorRpcRequestId, ServiceId, WithInvocationId, WithPartitionKey,
 };
 use crate::invocation::client::PatchDeploymentId;
 use crate::journal_v2::{CompletionId, GetInvocationOutputResult, Signal};
@@ -847,7 +847,8 @@ impl ServiceInvocationResponseSink {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Source {
     Ingress(PartitionProcessorRpcRequestId),
-    Subscription(SubscriptionId),
+    // TODO remove it at a later point in time, nobody is writing this anymore
+    Subscription(String),
     Service(InvocationId, InvocationTarget),
     RestartAsNew(InvocationId),
     // Since v1.8.0
@@ -1602,7 +1603,8 @@ mod serde_hacks {
     #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
     pub(super) enum Source {
         Ingress,
-        Subscription(SubscriptionId),
+        // TODO unused, remove it later on
+        Subscription(String),
         Service(InvocationId, InvocationTarget),
         RestartAsNew(InvocationId),
         Ingestion,

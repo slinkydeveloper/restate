@@ -8,35 +8,25 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use super::{
-    ActiveServiceRevision, DeliveryOptions, Deployment, Handler, KafkaCluster, Schema,
-    ServiceRevision,
-};
+use super::{ActiveServiceRevision, DeliveryOptions, Deployment, Handler, Schema, ServiceRevision};
 
-use crate::config::Configuration;
 use crate::deployment::{DeploymentAddress, Headers};
 use crate::endpoint_manifest::HandlerType;
-use crate::errors::GenericError;
-use crate::identifiers::{DeploymentId, SubscriptionId};
+use crate::identifiers::DeploymentId;
 use crate::invocation::{
     InvocationTargetType, ServiceType, VirtualObjectHandlerType, WorkflowHandlerType,
 };
-use crate::schema::Redaction;
 use crate::schema::deployment::DeploymentType;
 use crate::schema::invocation_target::{
     BadInputContentType, InputRules, InputValidationRule, OnMaxAttempts, OutputContentTypeRule,
     OutputRules, StatePreloadPolicy,
 };
-use crate::schema::kafka::{KafkaClusterName, KafkaClusterResolver};
 use crate::schema::registry::{DeploymentConnectionParameters, DiscoveryResponse};
-use crate::schema::subscriptions::{
-    EventInvocationTargetTemplate, KafkaSource, Sink, Subscription,
-};
 use crate::time::MillisSinceEpoch;
 use crate::{deployment, endpoint_manifest, identifiers};
 use bilrost::encoding::Collection;
 use bytestring::ByteString;
-use http::{HeaderValue, Uri};
+use http::HeaderValue;
 use itertools::Itertools;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -90,18 +80,6 @@ pub(in crate::schema) enum SchemaError {
         #[from]
         #[code]
         DeploymentError,
-    ),
-    #[error(transparent)]
-    Subscription(
-        #[from]
-        #[code]
-        SubscriptionError,
-    ),
-    #[error(transparent)]
-    KafkaCluster(
-        #[from]
-        #[code]
-        KafkaClusterError,
     ),
 }
 
@@ -160,64 +138,6 @@ pub(in crate::schema) enum ServiceError {
         size: usize,
         limit: usize,
     },
-}
-
-#[derive(Debug, thiserror::Error, codederror::CodedError)]
-#[code(restate_errors::META0009)]
-pub(in crate::schema) enum SubscriptionError {
-    #[error("subscription {0} already exists")]
-    Override(SubscriptionId),
-
-    #[error(
-        "invalid source URI '{0}': must have a scheme segment, with supported schemes: [kafka]."
-    )]
-    InvalidSourceScheme(Uri),
-    #[error(
-        "invalid source URI '{0}': source URI of Kafka type must have a authority segment containing the cluster name."
-    )]
-    InvalidKafkaSourceAuthority(Uri),
-
-    #[error(
-        "invalid sink URI '{0}': must have a scheme segment, with supported schemes: [service]."
-    )]
-    InvalidSinkScheme(Uri),
-    #[error(
-        "invalid sink URI '{0}': sink URI of service type must have a authority segment containing the service name."
-    )]
-    InvalidServiceSinkAuthority(Uri),
-    #[error("invalid sink URI '{0}': cannot find service/handler specified in the sink URI.")]
-    SinkServiceNotFound(Uri),
-
-    #[error(transparent)]
-    #[code(unknown)]
-    Validation(GenericError),
-}
-
-#[derive(Debug, thiserror::Error, codederror::CodedError)]
-#[code(unknown)]
-pub(in crate::schema) enum KafkaClusterError {
-    #[error("kafka cluster '{0}' already exists in schema registry")]
-    AlreadyExists(String),
-
-    #[error(
-        "Removing the kafka cluster '{0}' leads to subscription '{1}' being orphan. Remove the subscription first, or use the 'force' flag."
-    )]
-    RemovalLeadsToOrphanSubscription(String, SubscriptionId),
-
-    #[error(
-        "kafka cluster '{0}' conflicts with static configuration. Cluster names in schema registry cannot override statically configured clusters."
-    )]
-    ConflictsWithStaticConfig(String),
-
-    #[error(
-        "kafka cluster '{0}' cannot be updated, because it was defined in the restate configuration file. Update the configuration file directly, or remove the configuration file"
-    )]
-    CannotUpdateStaticClusterConfiguration(String),
-
-    #[error(
-        "kafka cluster '{0}' properties must contain either 'bootstrap.servers' or 'metadata.broker.list'"
-    )]
-    MissingBrokerConfiguration(String),
 }
 
 #[derive(Debug, thiserror::Error, codederror::CodedError)]
@@ -874,299 +794,6 @@ impl SchemaUpdater {
         false
     }
 
-    pub(in crate::schema) fn add_subscription(
-        &mut self,
-        source: Uri,
-        sink: Uri,
-        metadata: Option<HashMap<String, String>>,
-    ) -> Result<SubscriptionId, SchemaError> {
-        let id = SubscriptionId::default();
-
-        if self.schema.subscriptions.contains_key(&id) {
-            return Err(SchemaError::Subscription(SubscriptionError::Override(id)));
-        }
-
-        // Parse source
-        let source = match source.scheme_str() {
-            Some("kafka") => {
-                let cluster_name = source
-                    .authority()
-                    .ok_or_else(|| {
-                        SchemaError::Subscription(SubscriptionError::InvalidKafkaSourceAuthority(
-                            source.clone(),
-                        ))
-                    })?
-                    .as_str();
-                let topic_name = &source.path()[1..];
-                KafkaSource {
-                    cluster: cluster_name.to_string(),
-                    topic: topic_name.to_string(),
-                }
-            }
-            _ => {
-                return Err(SchemaError::Subscription(
-                    SubscriptionError::InvalidSourceScheme(source),
-                ));
-            }
-        };
-        let KafkaSource { cluster, .. } = &source;
-
-        // Parse sink
-        let sink = match sink.scheme_str() {
-            Some("service") => {
-                let service_name = sink
-                    .authority()
-                    .ok_or_else(|| {
-                        SchemaError::Subscription(SubscriptionError::InvalidServiceSinkAuthority(
-                            sink.clone(),
-                        ))
-                    })?
-                    .as_str();
-                let handler_name = &sink.path()[1..];
-
-                // Retrieve service and handler in the schema registry
-                let service_schemas = self
-                    .schema
-                    .active_service_revisions
-                    .get(service_name)
-                    .ok_or_else(|| {
-                        SchemaError::Subscription(SubscriptionError::SinkServiceNotFound(
-                            sink.clone(),
-                        ))
-                    })?;
-                let handler_schemas = service_schemas
-                    .service_revision
-                    .handlers
-                    .get(handler_name)
-                    .ok_or_else(|| {
-                        SchemaError::Subscription(SubscriptionError::SinkServiceNotFound(
-                            sink.clone(),
-                        ))
-                    })?;
-
-                Sink {
-                    event_invocation_target_template: match handler_schemas.target_ty {
-                        InvocationTargetType::Service => EventInvocationTargetTemplate::Service {
-                            name: service_name.to_owned(),
-                            handler: handler_name.to_owned(),
-                        },
-                        InvocationTargetType::VirtualObject(handler_ty) => {
-                            EventInvocationTargetTemplate::VirtualObject {
-                                name: service_name.to_owned(),
-                                handler: handler_name.to_owned(),
-                                handler_ty,
-                            }
-                        }
-                        InvocationTargetType::Workflow(handler_ty) => {
-                            EventInvocationTargetTemplate::Workflow {
-                                name: service_name.to_owned(),
-                                handler: handler_name.to_owned(),
-                                handler_ty,
-                            }
-                        }
-                    },
-                }
-            }
-            _ => {
-                return Err(SchemaError::Subscription(
-                    SubscriptionError::InvalidSinkScheme(sink),
-                ));
-            }
-        };
-
-        let mut metadata = metadata.unwrap_or_default();
-        check_ignored_kafka_properties(&metadata);
-
-        // Validate and merge cluster properties for Kafka sources
-        {
-            let cluster_properties = self
-                .schema
-                .get_kafka_cluster(cluster, Redaction::No)
-                .ok_or_else(|| {
-                    SchemaError::Subscription(SubscriptionError::Validation(GenericError::from(
-                        format!(
-                            "Kafka cluster '{}' not found. Available clusters: {:?}",
-                            cluster,
-                            self.schema
-                                .list_kafka_clusters(Redaction::No)
-                                .iter()
-                                .map(|kc| kc.name.to_string())
-                                .collect::<Vec<String>>()
-                        ),
-                    )))
-                })?
-                .properties;
-
-            // Set group.id (subscription metadata > cluster properties > subscription id)
-            let group_id = metadata
-                .get("group.id")
-                .or_else(|| cluster_properties.get("group.id"))
-                .cloned()
-                .unwrap_or_else(|| id.to_string());
-            metadata.insert("group.id".into(), group_id);
-
-            // Set client.id if unset
-            if !(cluster_properties.contains_key("client.id") || metadata.contains_key("client.id"))
-            {
-                metadata.insert("client.id".to_string(), "restate".to_string());
-            }
-        }
-
-        let subscription = Subscription::new(id, source, sink, metadata);
-
-        self.schema.subscriptions.insert(id, subscription);
-        self.mark_updated();
-
-        Ok(id)
-    }
-
-    // Returns true if it was removed
-    pub fn remove_subscription(&mut self, subscription_id: SubscriptionId) -> bool {
-        if self.schema.subscriptions.remove(&subscription_id).is_some() {
-            self.mark_updated();
-            return true;
-        }
-        false
-    }
-
-    pub(in crate::schema) fn add_kafka_cluster(
-        &mut self,
-        kafka_cluster_name: KafkaClusterName,
-        properties: HashMap<String, String>,
-    ) -> Result<KafkaClusterName, SchemaError> {
-        validate_kafka_cluster_properties(&kafka_cluster_name, &properties)?;
-        check_ignored_kafka_properties(&properties);
-
-        // Check for name conflict with existing dynamic clusters
-        if self
-            .schema
-            .kafka_clusters
-            .contains_key(kafka_cluster_name.as_str())
-        {
-            return Err(SchemaError::KafkaCluster(KafkaClusterError::AlreadyExists(
-                kafka_cluster_name.to_string(),
-            )));
-        }
-
-        // Check for name conflict with static config
-        let config = Configuration::pinned();
-        if config
-            .ingress
-            .available_kafka_clusters()
-            .contains(&kafka_cluster_name.as_str())
-        {
-            return Err(SchemaError::KafkaCluster(
-                KafkaClusterError::ConflictsWithStaticConfig(kafka_cluster_name.to_string()),
-            ));
-        }
-
-        // Create and insert cluster
-        let cluster = KafkaCluster::new(kafka_cluster_name.clone(), properties);
-        self.schema
-            .kafka_clusters
-            .insert(kafka_cluster_name.to_string(), cluster);
-        self.mark_updated();
-
-        Ok(kafka_cluster_name)
-    }
-
-    pub(in crate::schema) fn remove_kafka_cluster(
-        &mut self,
-        kafka_cluster_name: &str,
-        allow_orphan_subscriptions: AllowOrphanSubscriptions,
-    ) -> Result<bool, SchemaError> {
-        // Check it exists
-        if !self.schema.kafka_clusters.contains_key(kafka_cluster_name) {
-            let config = Configuration::pinned();
-            if config
-                .ingress
-                .available_kafka_clusters()
-                .contains(&kafka_cluster_name)
-            {
-                return Err(SchemaError::KafkaCluster(
-                    KafkaClusterError::CannotUpdateStaticClusterConfiguration(
-                        kafka_cluster_name.to_owned(),
-                    ),
-                ));
-            } else {
-                return Ok(false);
-            }
-        }
-
-        // Look for orphan subscriptions
-        for sub_id in self
-            .schema
-            .subscriptions
-            .values()
-            .filter(|s| {
-                let KafkaSource { cluster, .. } = s.source();
-                cluster == kafka_cluster_name
-            })
-            .map(|s| s.id())
-        {
-            match allow_orphan_subscriptions {
-                AllowOrphanSubscriptions::Yes => {
-                    warn!(
-                        "Removing kafka cluster '{}' will interrupt subscription '{}'",
-                        kafka_cluster_name, sub_id
-                    );
-                }
-                AllowOrphanSubscriptions::No => {
-                    return Err(SchemaError::KafkaCluster(
-                        KafkaClusterError::RemovalLeadsToOrphanSubscription(
-                            kafka_cluster_name.to_owned(),
-                            sub_id,
-                        ),
-                    ));
-                }
-            }
-        }
-
-        self.schema.kafka_clusters.remove(kafka_cluster_name);
-        self.mark_updated();
-        Ok(true)
-    }
-
-    pub(in crate::schema) fn update_kafka_cluster(
-        &mut self,
-        kafka_cluster_name: &str,
-        properties: HashMap<String, String>,
-    ) -> Result<(), SchemaError> {
-        validate_kafka_cluster_properties(kafka_cluster_name, &properties)?;
-        check_ignored_kafka_properties(&properties);
-
-        // Get cluster
-        let Some(cluster) = self.schema.kafka_clusters.get_mut(kafka_cluster_name) else {
-            let config = Configuration::pinned();
-            if config
-                .ingress
-                .available_kafka_clusters()
-                .contains(&kafka_cluster_name)
-            {
-                return Err(SchemaError::KafkaCluster(
-                    KafkaClusterError::CannotUpdateStaticClusterConfiguration(
-                        kafka_cluster_name.to_string(),
-                    ),
-                ));
-            } else {
-                return Err(SchemaError::NotFound(format!(
-                    "kafka cluster '{}'",
-                    kafka_cluster_name
-                )));
-            }
-        };
-
-        if cluster.properties == properties {
-            // Nothing to update
-            return Ok(());
-        }
-        // Do the update
-        cluster.properties_mut().clone_from(&properties);
-        self.mark_updated();
-
-        Ok(())
-    }
-
     pub(in crate::schema) fn modify_service(
         &mut self,
         name: &str,
@@ -1469,30 +1096,6 @@ fn validate_service_name(name: &str) -> Result<(), ServiceError> {
         Err(ServiceError::ReservedName(name.to_string()))
     } else {
         Ok(())
-    }
-}
-
-fn validate_kafka_cluster_properties(
-    name: &str,
-    properties: &HashMap<String, String>,
-) -> Result<(), KafkaClusterError> {
-    if !properties.contains_key("bootstrap.servers")
-        && !properties.contains_key("metadata.broker.list")
-    {
-        return Err(KafkaClusterError::MissingBrokerConfiguration(
-            name.to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn check_ignored_kafka_properties(metadata: &HashMap<String, String>) {
-    // These properties are ignored by our kafka consumer because they're implementation details
-    if metadata.contains_key("enable.auto.commit") {
-        warn!("enable.auto.commit will be ignored");
-    }
-    if metadata.contains_key("enable.auto.offset.store") {
-        warn!("enable.auto.offset.store will be ignored");
     }
 }
 

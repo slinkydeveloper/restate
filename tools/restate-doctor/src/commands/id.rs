@@ -20,7 +20,7 @@ use restate_cli_util::ui::console::StyledTable;
 use restate_cli_util::{c_println, c_title};
 use restate_types::identifiers::{
     AwakeableIdentifier, DeploymentId, ExternalSignalIdentifier, InvocationId, SnapshotId,
-    SubscriptionId, TimestampAwareId, WithPartitionKey,
+    TimestampAwareId, WithPartitionKey,
 };
 use restate_types::time::MillisSinceEpoch;
 
@@ -50,7 +50,6 @@ pub async fn run_decode(cmd: &Decode) -> anyhow::Result<()> {
         match prefix {
             "inv" => return decode_invocation_id(input),
             "dp" => return decode_deployment_id(input),
-            "sub" => return decode_subscription_id(input),
             "prom" => return decode_awakeable_id(input),
             "sign" => return decode_signal_id(input),
             "snap" => return decode_snapshot_id(input),
@@ -124,12 +123,6 @@ impl IdWithBytes for DeploymentId {
     }
 }
 
-impl IdWithBytes for SubscriptionId {
-    fn to_bytes(&self) -> [u8; 16] {
-        SubscriptionId::to_bytes(*self)
-    }
-}
-
 impl IdWithBytes for SnapshotId {
     fn to_bytes(&self) -> [u8; 16] {
         SnapshotId::to_bytes(*self)
@@ -160,10 +153,6 @@ fn decode_invocation_id(input: &str) -> anyhow::Result<()> {
 
 fn decode_deployment_id(input: &str) -> anyhow::Result<()> {
     decode_timestamp_id::<DeploymentId>(input, "Deployment")
-}
-
-fn decode_subscription_id(input: &str) -> anyhow::Result<()> {
-    decode_timestamp_id::<SubscriptionId>(input, "Subscription")
 }
 
 fn decode_snapshot_id(input: &str) -> anyhow::Result<()> {

@@ -1502,10 +1502,8 @@ pub mod v1 {
                     ),
                     source::Source::Subscription(subscription) => {
                         restate_types::invocation::Source::Subscription(
-                            restate_types::identifiers::SubscriptionId::from_slice(
-                                &subscription.subscription_id,
-                            )
-                            .map_err(ConversionError::invalid_data)?,
+                            String::from_utf8(subscription.subscription_id.to_vec())
+                                .map_err(ConversionError::invalid_data)?,
                         )
                     }
                     source::Source::Service(service) => restate_types::invocation::Source::Service(
@@ -1547,7 +1545,7 @@ pub mod v1 {
                     }
                     restate_types::invocation::Source::Subscription(sub_id) => {
                         source::Source::Subscription(source::Subscription {
-                            subscription_id: sub_id.to_bytes().to_vec().into(),
+                            subscription_id: sub_id.into_bytes().into(),
                         })
                     }
                     restate_types::invocation::Source::Service(
@@ -1584,7 +1582,7 @@ pub mod v1 {
                     }
                     restate_types::invocation::Source::Subscription(sub_id) => {
                         source::Source::Subscription(source::Subscription {
-                            subscription_id: sub_id.to_bytes().to_vec().into(),
+                            subscription_id: Bytes::copy_from_slice(sub_id.as_bytes()),
                         })
                     }
                     restate_types::invocation::Source::Service(
@@ -4197,7 +4195,7 @@ pub mod v1 {
         use restate_types::vqueues::VQueueId;
         use restate_types::{
             errors::ConversionError,
-            identifiers::{DeploymentId, InvocationId, SubscriptionId},
+            identifiers::{DeploymentId, InvocationId},
             invocation::ServiceType,
             service_protocol::ServiceProtocolVersion,
         };
@@ -4586,8 +4584,8 @@ pub mod v1 {
         }
 
         impl super::source::Subscription {
-            pub fn subscription_id(&self) -> std::result::Result<SubscriptionId, ConversionError> {
-                SubscriptionId::from_slice(self.subscription_id.as_ref())
+            pub fn subscription_id(&self) -> std::result::Result<String, ConversionError> {
+                String::from_utf8(self.subscription_id.to_vec())
                     .map_err(|_| ConversionError::invalid_data_static("subscription_id"))
             }
         }

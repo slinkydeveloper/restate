@@ -36,10 +36,7 @@ use restate_types::partition_processor::client::{
 };
 use restate_types::partitions::state::PartitionReplicaSetStates;
 use restate_types::retries::RetryPolicy;
-use restate_types::schema::kafka::KafkaCluster;
-use restate_types::schema::subscriptions::Subscription;
 use restate_types::state_mut::ExternalStateMutation;
-use restate_worker::SubscriptionController;
 use restate_worker::WorkerHandle;
 use restate_worker::WorkerHandleError;
 
@@ -75,16 +72,6 @@ impl WorkerHandle for Mock {
     async fn external_state_mutation(
         &self,
         _mutation: ExternalStateMutation,
-    ) -> Result<(), WorkerHandleError> {
-        Ok(())
-    }
-}
-
-impl SubscriptionController for Mock {
-    async fn update_subscriptions(
-        &self,
-        _: Vec<KafkaCluster>,
-        _: Vec<Subscription>,
     ) -> Result<(), WorkerHandleError> {
         Ok(())
     }

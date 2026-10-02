@@ -16,7 +16,7 @@ use axum::response::{IntoResponse, Response};
 use codederror::{Code, CodedError};
 
 use restate_core::ShutdownError;
-use restate_types::identifiers::{DeploymentId, SubscriptionId};
+use restate_types::identifiers::DeploymentId;
 use restate_types::invocation::ServiceType;
 use restate_types::schema::registry::{HttpAuthValidationError, SchemaRegistryError};
 use restate_util_string::RestrictedValueError;
@@ -283,10 +283,6 @@ pub enum MetaApiError {
         service_name: String,
         handler_name: String,
     },
-    #[error("The requested subscription '{0}' does not exist")]
-    SubscriptionNotFound(SubscriptionId),
-    #[error("The requested Kafka cluster '{0}' does not exist")]
-    KafkaClusterNotFound(String),
     #[error("Cannot {0} for service type {1}")]
     UnsupportedOperation(&'static str, ServiceType),
     #[error(transparent)]
@@ -306,9 +302,7 @@ impl IntoResponse for MetaApiError {
         let status_code = match &self {
             MetaApiError::ServiceNotFound(_)
             | MetaApiError::HandlerNotFound { .. }
-            | MetaApiError::DeploymentNotFound(_)
-            | MetaApiError::SubscriptionNotFound(_)
-            | MetaApiError::KafkaClusterNotFound(_) => StatusCode::NOT_FOUND,
+            | MetaApiError::DeploymentNotFound(_) => StatusCode::NOT_FOUND,
             MetaApiError::InvalidField(_, _)
             | MetaApiError::UnsupportedOperation(_, _)
             | MetaApiError::BadScope(_) => StatusCode::BAD_REQUEST,

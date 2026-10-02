@@ -15,12 +15,10 @@ mod error;
 mod handlers;
 mod health;
 mod invocations;
-mod kafka_clusters;
 mod query;
 mod rules;
 mod serdes;
 mod services;
-mod subscriptions;
 mod version;
 mod vqueues;
 
@@ -52,9 +50,6 @@ pub use version::{MAX_ADMIN_API_VERSION, MIN_ADMIN_API_VERSION};
         (name = "deployment", description = "Service Deployment management"),
         (name = "invocation", description = "Invocation management",
          external_docs(url = "https://docs.restate.dev/services/invocation/http", description = "Invocations documentation")),
-        (name = "subscription", description = "Subscription management",
-         external_docs(url = "https://docs.restate.dev/services/invocation/kafka#managing-kafka-subscriptions", description = "Kafka subscriptions documentation")),
-        (name = "kafka_cluster", description = "Kafka cluster management"),
         (name = "service", description = "Service management"),
         (name = "service_handler", description = "Service handlers metadata"),
         (name = "vqueue", description = "Virtual queue management"),
@@ -115,17 +110,6 @@ where
             .routes(routes!(invocations::restart_as_new_invocation))
             .routes(routes!(invocations::resume_invocation))
             .routes(routes!(invocations::pause_invocation))
-            // Subscription endpoints
-            .routes(routes!(subscriptions::create_subscription))
-            .routes(routes!(subscriptions::list_subscriptions))
-            .routes(routes!(subscriptions::get_subscription))
-            .routes(routes!(subscriptions::delete_subscription))
-            // Kafka cluster endpoints
-            .routes(routes!(kafka_clusters::create_kafka_cluster))
-            .routes(routes!(kafka_clusters::list_kafka_clusters))
-            .routes(routes!(kafka_clusters::get_kafka_cluster))
-            .routes(routes!(kafka_clusters::update_kafka_cluster))
-            .routes(routes!(kafka_clusters::delete_kafka_cluster))
             // Rule book endpoints
             .routes(routes!(rules::upsert_rules))
             .routes(routes!(rules::delete_rules))

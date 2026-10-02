@@ -10,8 +10,6 @@
 
 use super::*;
 
-use std::collections::HashMap;
-
 use serde_with::serde_as;
 
 /// The schema information
@@ -24,22 +22,6 @@ pub struct Schema {
 
     /// This gets bumped on each update.
     version: Version,
-    // flexbuffers only supports string-keyed maps :-( --> so we store it as vector of kv pairs
-    #[serde_as(as = "serde_with::Seq<(_, _)>")]
-    subscriptions: HashMap<SubscriptionId, Subscription>,
-
-    // Kafka clusters
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    #[serde_as(as = "restate_serde_util::MapAsVec")]
-    kafka_clusters: HashMap<String, KafkaCluster>,
-}
-
-impl restate_serde_util::MapAsVecItem for KafkaCluster {
-    type Key = String;
-
-    fn key(&self) -> Self::Key {
-        self.name.to_string()
-    }
 }
 
 impl From<super::Schema> for Schema {
@@ -47,16 +29,12 @@ impl From<super::Schema> for Schema {
         super::Schema {
             version,
             deployments,
-            subscriptions,
-            kafka_clusters,
             ..
         }: super::Schema,
     ) -> Self {
         Self {
             deployments_v2: Some(deployments.into_values().collect()),
             version,
-            subscriptions,
-            kafka_clusters,
         }
     }
 }
@@ -66,8 +44,6 @@ impl From<Schema> for super::Schema {
         Schema {
             deployments_v2,
             version,
-            subscriptions,
-            kafka_clusters,
         }: Schema,
     ) -> Self {
         let Some(deployments_v2) = deployments_v2 else {
@@ -81,8 +57,6 @@ impl From<Schema> for super::Schema {
                 .into_iter()
                 .map(|deployment| (deployment.id, deployment))
                 .collect(),
-            subscriptions,
-            kafka_clusters,
         }
     }
 }

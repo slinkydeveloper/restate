@@ -1315,7 +1315,6 @@ macro_rules! ulid_backed_id {
 }
 
 ulid_backed_id!(Deployment @with_resource_id);
-ulid_backed_id!(Subscription @with_resource_id);
 ulid_backed_id!(PartitionProcessorRpcRequest);
 ulid_backed_id!(Snapshot @with_resource_id);
 
@@ -1790,22 +1789,6 @@ mod tests {
             UNSCOPED_SERVICE_PARTITION_KEY_FANOUT as usize
         );
         assert_ne!(service_a_keys, service_b_keys);
-    }
-
-    #[test]
-    fn subscription_id_format() {
-        let a = SubscriptionId::new();
-        assert!(a.timestamp().as_u64() > 0);
-        let a_str = a.to_string();
-        assert!(a_str.starts_with("sub_"));
-    }
-
-    #[test]
-    fn subscription_roundtrip() {
-        let a = SubscriptionId::new();
-        let b: SubscriptionId = a.to_string().parse().unwrap();
-        assert_eq!(a, b);
-        assert_eq!(a.to_string(), b.to_string());
     }
 
     #[test]

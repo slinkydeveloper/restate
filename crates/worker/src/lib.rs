@@ -19,7 +19,6 @@ pub mod partition;
 mod partition;
 mod partition_processor_manager;
 mod rule_book_cache;
-mod subscription_controller;
 
 use std::sync::Arc;
 
@@ -51,7 +50,6 @@ use crate::partition_processor_manager::PartitionProcessorManager;
 pub use self::error::*;
 pub use self::handle::*;
 pub use crate::rule_book_cache::RuleBookCacheHandle;
-pub use crate::subscription_controller::SubscriptionController;
 
 type PartitionProcessorBuilder = partition::PartitionProcessorBuilder;
 
