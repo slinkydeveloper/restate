@@ -1,0 +1,29 @@
+# Release Notes: Cloud login selects the environment, register connected services by name
+
+## New Feature
+
+### What Changed
+`restate cloud login` now also selects the Restate Cloud environment the CLI talks to, right after
+logging in. With one account and one environment it does so silently; with several, it asks you to
+pick one (when running in a terminal). Pass `--no-env` to only log in, as before.
+
+A service connected to Restate Cloud with the SDK's `connect()` can be registered by its name, with the
+identifier the SDK prints at startup:
+
+```shell
+restate cloud login
+restate deployments register connect://greeter-v1
+```
+
+The CLI resolves the name from the Cloud environment you're logged in to; nothing else to configure.
+
+### Why This Matters
+Going from a fresh laptop to a service registered in your Cloud environment is two commands: log in,
+register. You no longer need `restate cloud env configure` in between, nor to assemble the tunnel URL
+by hand.
+
+### Impact on Users
+- Existing environments in your CLI config file are kept; login only writes a section named after
+  the Cloud environment when there isn't one with that name already.
+- `restate cloud env configure` still works to select another environment or account.
+- `--tunnel-name <destination URL>` for services behind `restate cloud env tunnel` is unchanged.
