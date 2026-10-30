@@ -11,43 +11,40 @@
 use anyhow::{Context, Result, anyhow};
 use cling::prelude::*;
 use indicatif::ProgressBar;
-use restate_cli_util::{CliContext, c_println, c_success, c_tip};
 use serde::Deserialize;
-use toml_edit::{DocumentMut, table, value};
+use toml_edit::{DocumentMut, Item, table, value};
 
-use crate::{
-    build_info,
-    cli_env::CliEnv,
-    clients::cloud::{CloudClient, CloudClientInterface},
+use restate_cli_util::{CliContext, c_println, c_success, c_tip, c_warn};
+
+use crate::commands::env::profile::{
+    ProfileSpec, load_config_document, select_profile, write_profile,
 };
+use crate::{build_info, cli_env::CliEnv, clients::cloud::CloudClient};
+
+use super::profile::{Choice, choose_environment};
 
 #[derive(Run, Parser, Collect, Clone)]
 #[cling(run = "run_login")]
-pub struct Login {}
+#[command(after_help = after_help!(
+    examples: [
+        "restate cloud login",
+        "restate cloud login --no-env    # only log in, pick the environment later with `restate env add`",
+    ],
+    learn_more: "https://docs.restate.dev/cloud",
+))]
+pub struct Login {
+    /// Only log in: don't select a Cloud environment afterwards
+    #[clap(long)]
+    no_env: bool,
+}
 
-pub async fn run_login(State(env): State<CliEnv>, _opts: &Login) -> Result<()> {
-    let config_data = if env.config_file.is_file() {
-        std::fs::read_to_string(env.config_file.as_path())?
-    } else {
-        "".into()
-    };
-
-    let mut doc = config_data
-        .parse::<DocumentMut>()
-        .context("Failed to parse config file as TOML")?;
+pub async fn run_login(State(env): State<CliEnv>, opts: &Login) -> Result<()> {
+    let mut doc = load_config_document(&env)?;
 
     let client_id = env.config.cloud.resolve_workos_client_id().await?;
     let access_token = workos_auth_flow(&client_id).await?;
 
     write_access_token(&mut doc, &access_token)?;
-
-    let mut env = env;
-    env.config.cloud.credentials = Some(super::Credentials { access_token });
-
-    let client = CloudClient::new(&env)?;
-    let accounts = client.list_accounts().await?.into_body().await;
-
-    // write out config
     env.write_config(&doc.to_string())
         .context("Failed to write to config file")?;
     c_success!(
@@ -55,17 +52,85 @@ pub async fn run_login(State(env): State<CliEnv>, _opts: &Login) -> Result<()> {
         env.config_file.display()
     );
 
-    match accounts {
-        Ok(accounts) if accounts.accounts.is_empty() => {
-            c_tip!(
-                "It looks like you don't have an account yet.\nLog in to the UI at https://cloud.restate.dev to create one."
-            )
-        }
-        // ignore error at this point; login was still a success
-        _ => {}
+    if opts.no_env {
+        return Ok(());
     }
 
+    let mut env = env;
+    env.config.cloud.credentials = Some(super::Credentials { access_token });
+    // The login succeeded whatever happens next: a failure to select an environment is
+    // reported, not an error.
+    if let Err(err) = select_environment(&env).await {
+        c_warn!(
+            "Logged in, but couldn't select an environment: {err:#}\nRun `restate env add` to pick one."
+        );
+    }
     Ok(())
+}
+
+/// Select the Cloud environment to use: silently when there is one account with one
+/// environment, by asking when possible, else leave it to `restate env add`.
+async fn select_environment(env: &CliEnv) -> Result<()> {
+    let client = CloudClient::new(env)?;
+    let chosen = match choose_environment(&client, None, CliContext::get().can_prompt()).await? {
+        Choice::Environment(chosen) => chosen,
+        Choice::NoAccounts => {
+            c_tip!(
+                "It looks like you don't have an account yet.\nLog in to the UI at https://cloud.restate.dev to create one."
+            );
+            return Ok(());
+        }
+        Choice::NoEnvironments { account_name } => {
+            c_tip!(
+                "Account {account_name} has no environment yet.\nCreate one in the UI at https://cloud.restate.dev, then run `restate env add`."
+            );
+            return Ok(());
+        }
+        Choice::Ambiguous => {
+            c_tip!(
+                "You have several accounts or environments: run `restate env add` to pick the one to use."
+            );
+            return Ok(());
+        }
+    };
+
+    let profile = chosen.environment.name.clone();
+    let mut doc = load_config_document(env)?;
+    if let Some(existing) = doc.get(&profile)
+        && !is_cloud_environment(existing, &chosen.environment.environment_id)
+    {
+        c_tip!(
+            "The CLI config file already has an environment named \"{profile}\" that isn't this one.\nRun `restate env add` to add it under another name."
+        );
+        return Ok(());
+    }
+    write_profile(
+        &mut doc,
+        &profile,
+        &ProfileSpec::Cloud {
+            account_id: &chosen.account_id,
+            environment: &chosen.environment,
+        },
+    );
+    env.write_config(&doc.to_string())
+        .context("Failed to write to config file")?;
+    select_profile(env, &profile)?;
+    c_success!(
+        "Using environment \"{profile}\" ({}, {}) of account {}",
+        chosen.environment.environment_id,
+        chosen.environment.region,
+        chosen.account_name
+    );
+    Ok(())
+}
+
+/// Whether a section of the config file is the Cloud environment `environment_id`.
+fn is_cloud_environment(section: &Item, environment_id: &str) -> bool {
+    section
+        .get("cloud")
+        .and_then(|cloud| cloud.get("environment_id"))
+        .and_then(Item::as_str)
+        == Some(environment_id)
 }
 
 fn write_access_token(doc: &mut DocumentMut, access_token: &str) -> Result<()> {

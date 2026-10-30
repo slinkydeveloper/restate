@@ -53,7 +53,7 @@ pub(crate) struct ChosenEnvironment {
 
 /// The result of [`choose_environment`].
 pub(crate) enum Choice {
-    Environment(ChosenEnvironment),
+    Environment(Box<ChosenEnvironment>),
     /// The user has no account yet.
     NoAccounts,
     /// The account has no environment yet.
@@ -164,11 +164,11 @@ pub(crate) async fn choose_environment(
     })
     .await?;
 
-    Ok(Choice::Environment(ChosenEnvironment {
+    Ok(Choice::Environment(Box::new(ChosenEnvironment {
         account_id: account.account_id.clone(),
         account_name: account.name.clone(),
         environment,
-    }))
+    })))
 }
 
 /// A spinner with `msg` while `f` runs; nothing when prompts aren't possible (e.g. `--json`),
