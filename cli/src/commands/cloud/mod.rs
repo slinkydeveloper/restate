@@ -11,6 +11,7 @@
 mod config_discovery;
 mod environments;
 mod login;
+pub(crate) mod profile;
 
 use base64::Engine;
 use cling::prelude::*;
@@ -122,7 +123,8 @@ pub enum Cloud {
     /// Prints a URL and a code to confirm in the browser (opened automatically when possible),
     /// then waits for the login to complete. Needs a person: agents can't complete it.
     Login(login::Login),
-    /// Manage Restate Cloud Environments
+    /// Deprecated: use `restate env add` and `restate cloud tunnel`
     #[clap(subcommand)]
+    #[command(hide = true)]
     Environments(environments::Environments),
 }

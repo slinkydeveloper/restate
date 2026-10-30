@@ -22,17 +22,14 @@ use crate::{
 
 /// List the environments of the CLI config file, marking the current one
 #[derive(Run, Parser, Collect, Clone)]
-#[cling(run = "run_list_environments")]
+#[cling(run = "run_list")]
 #[command(after_help = after_help!(
     learn_more: "https://docs.restate.dev/references/cli-config",
 ))]
-#[clap(visible_alias = "list-env")]
-pub struct ListEnvironments {}
+#[clap(visible_alias = "ls")]
+pub struct List {}
 
-pub async fn run_list_environments(
-    State(env): State<CliEnv>,
-    _opts: &ListEnvironments,
-) -> Result<()> {
+pub async fn run_list(State(env): State<CliEnv>, _opts: &List) -> Result<()> {
     let defaults = CliConfig::default();
     let local = CliConfig::local();
 
