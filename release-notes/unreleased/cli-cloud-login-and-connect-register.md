@@ -27,3 +27,6 @@ by hand.
   the Cloud environment when there isn't one with that name already.
 - `restate cloud env configure` still works to select another environment or account.
 - `--tunnel-name <destination URL>` for services behind `restate cloud env tunnel` is unchanged.
+- `restate deployments register` now waits up to 30 seconds for the server to discover the endpoint
+  (`--request-timeout` still applies when set higher), so a slow or unreachable endpoint reports the
+  server's discovery error instead of a CLI timeout.
