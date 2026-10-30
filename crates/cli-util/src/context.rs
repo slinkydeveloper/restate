@@ -46,7 +46,6 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use dotenvy::dotenv;
 use tracing::{info, warn};
 use tracing_log::AsTrace;
 
@@ -74,6 +73,10 @@ pub struct CliContext {
     /// The `CI` environment variable is set to a truthy value.
     ci: bool,
     loaded_dotenv: Option<PathBuf>,
+    /// Why `--env-file` could not be loaded.
+    dotenv_error: Option<String>,
+    /// A `./.env` with `RESTATE_*` variables that wasn't loaded (no `--env-file`).
+    ignored_dotenv: Option<PathBuf>,
 }
 
 impl Default for CliContext {
@@ -87,6 +90,8 @@ impl Default for CliContext {
             non_interactive: false,
             ci: false,
             loaded_dotenv: None,
+            dotenv_error: None,
+            ignored_dotenv: None,
         }
     }
 }
@@ -94,7 +99,7 @@ impl Default for CliContext {
 impl CliContext {
     /// Create a new CLI context from command-line options.
     ///
-    /// This initializes color detection, logging, and loads `.env` files.
+    /// This initializes color detection, logging, and loads the `--env-file` dotenv file.
     /// Call [`set_as_global()`] after creation to make it the global context.
     pub fn new(opts: CommonOpts) -> Self {
         let os_env = OsEnv::default();
@@ -142,8 +147,26 @@ impl CliContext {
 
     /// Core builder: color detection, dotenv, and UI setup without tracing.
     fn build(os_env: &OsEnv, opts: &CommonOpts) -> Self {
-        // Load .env file. Best effort.
-        let maybe_dotenv = dotenv();
+        // Only `--env-file` is loaded (never overriding set variables); a `./.env` is
+        // only detected, see `ignored_dotenv`.
+        let (loaded_dotenv, dotenv_error) = match &opts.env_file {
+            Some(path) => match dotenvy::from_path(path) {
+                Ok(()) => (Some(path.clone()), None),
+                Err(err) => (
+                    None,
+                    Some(format!(
+                        "Failed to load the env file {}: {err}",
+                        path.display()
+                    )),
+                ),
+            },
+            None => (None, None),
+        };
+        let ignored_dotenv = if opts.env_file.is_none() {
+            dotenv_with_restate_vars(Path::new("."))
+        } else {
+            None
+        };
 
         // color setup
         // NO_COLOR=1 with any value other than "0" means user doesn't want colors.
@@ -210,7 +233,9 @@ impl CliContext {
             json_output: opts.output.json,
             non_interactive,
             ci,
-            loaded_dotenv: maybe_dotenv.ok(),
+            loaded_dotenv,
+            dotenv_error,
+            ignored_dotenv,
         }
     }
 
@@ -303,10 +328,39 @@ impl CliContext {
         self.network.insecure_skip_tls_verify
     }
 
-    /// Get the path to the loaded `.env` file, if any.
+    /// Get the path to the loaded `.env` file (`--env-file`), if any.
     pub fn loaded_dotenv(&self) -> Option<&Path> {
         self.loaded_dotenv.as_deref()
     }
+
+    /// Why the `--env-file` could not be loaded, e.g. it doesn't exist. Nothing reports
+    /// it: the CLI should fail with it.
+    pub fn dotenv_error(&self) -> Option<&str> {
+        self.dotenv_error.as_deref()
+    }
+
+    /// A `.env` in the current directory that defines `RESTATE_*` variables but wasn't
+    /// loaded, since no `--env-file` was given: worth a hint, as the CLI used to load it.
+    pub fn ignored_dotenv(&self) -> Option<&Path> {
+        self.ignored_dotenv.as_deref()
+    }
+}
+
+/// `dir/.env`, if it exists and defines a `RESTATE_*` variable, but not
+/// `RESTATE_ENVIRONMENT_ID`: that one marks a service's connection file (written by
+/// `restate cloud link` or the Restate Cloud UI), which the CLI never loaded.
+fn dotenv_with_restate_vars(dir: &Path) -> Option<PathBuf> {
+    let path = dir.join(".env");
+    let content = std::fs::read_to_string(&path).ok()?;
+    let variables: Vec<&str> = content
+        .lines()
+        .map(|line| line.trim_start().trim_start_matches("export "))
+        .filter(|line| line.starts_with("RESTATE_"))
+        .collect();
+    let is_connection_file = variables
+        .iter()
+        .any(|line| line.starts_with("RESTATE_ENVIRONMENT_ID"));
+    (!variables.is_empty() && !is_connection_file).then_some(path)
 }
 
 /// Whether an environment flag like `CI` is on. CI providers set it to `true` (e.g.
@@ -316,4 +370,36 @@ fn is_truthy(value: &str) -> bool {
         value.trim().to_ascii_lowercase().as_str(),
         "" | "false" | "0"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_a_dotenv_with_restate_variables() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(dotenv_with_restate_vars(dir.path()), None);
+
+        std::fs::write(dir.path().join(".env"), "# comment\nFOO=bar\n").unwrap();
+        assert_eq!(dotenv_with_restate_vars(dir.path()), None);
+
+        std::fs::write(
+            dir.path().join(".env"),
+            "FOO=bar\n  export RESTATE_AUTH_TOKEN=key_x\n",
+        )
+        .unwrap();
+        assert_eq!(
+            dotenv_with_restate_vars(dir.path()),
+            Some(dir.path().join(".env"))
+        );
+
+        // A service's connection file is the SDK's, not the CLI's.
+        std::fs::write(
+            dir.path().join(".env"),
+            "RESTATE_ENVIRONMENT_ID=env_x\nRESTATE_AUTH_TOKEN=key_x\n",
+        )
+        .unwrap();
+        assert_eq!(dotenv_with_restate_vars(dir.path()), None);
+    }
 }

@@ -9,6 +9,7 @@
 // by the Apache License, Version 2.0.
 
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Args, ValueEnum};
@@ -187,4 +188,10 @@ pub struct CommonOpts {
     pub(crate) ui: UiOpts,
     #[clap(flatten)]
     pub(crate) network: NetworkOpts,
+
+    /// Load environment variables (e.g. $RESTATE_ADMIN_URL, $RESTATE_AUTH_TOKEN) from this
+    /// dotenv file first; variables already set win. Nothing is loaded without it, not even
+    /// `./.env`.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub env_file: Option<PathBuf>,
 }

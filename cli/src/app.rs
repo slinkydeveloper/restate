@@ -14,11 +14,12 @@ use cling::prelude::*;
 use figment::Profile;
 use tracing::info;
 
-use restate_cli_util::{CliContext, CommonOpts};
+use restate_cli_util::{CliContext, CommonOpts, c_warn};
 
 use crate::cli_env::{CliEnv, EnvironmentSource};
 use crate::commands::completions::Completions;
 use crate::commands::*;
+use crate::error::RestateCliError;
 
 /// Restate command-line interface
 ///
@@ -67,7 +68,8 @@ const ROOT_LONG_HELP: &str = concat!(
     RESTATE_ADMIN_URL=https://restate.example.com:9070 RESTATE_AUTH_TOKEN=... restate whoami
   or add an environment to the CLI config file (`restate env add`, see `restate env --help`)
   and select it with -e/--environment or `restate env use`. The variables take precedence
-  over the config file.
+  over the config file. They can come from a dotenv file with --env-file; the CLI doesn't
+  load `./.env` on its own.
 
 ",
     after_help!(learn_more: "https://docs.restate.dev/"),
@@ -231,6 +233,17 @@ pub enum Command {
 
 fn init(common_opts: &CommonOpts, global_opts: &GlobalOpts) -> Result<State<CliEnv>> {
     CliContext::new(common_opts.clone()).set_as_global();
+    let ctx = CliContext::get();
+    if let Some(err) = ctx.dotenv_error() {
+        return Err(RestateCliError::bad_input(err).into());
+    }
+    if let Some(path) = ctx.ignored_dotenv() {
+        c_warn!(
+            "Found {path} but the CLI no longer loads it automatically; pass `--env-file {path}`, \
+             or run `restate env add --manual` to configure the server it names",
+            path = path.display()
+        );
+    }
     let env = CliEnv::load(global_opts)?;
 
     match &env.environment_source {
