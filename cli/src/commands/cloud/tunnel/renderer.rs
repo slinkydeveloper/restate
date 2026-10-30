@@ -165,7 +165,7 @@ impl TunnelRenderer {
             return;
         };
 
-        let mut output = "restate cloud environment tunnel - Press Ctrl-C to exit".to_string();
+        let mut output = "restate cloud tunnel - Press Ctrl-C to exit".to_string();
         let line_count = b.lines().count();
 
         let logo = restate_types::art::render_restate_logo(CliContext::get().colors_enabled());

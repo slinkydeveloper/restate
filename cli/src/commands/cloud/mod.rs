@@ -9,10 +9,12 @@
 // by the Apache License, Version 2.0.
 
 mod config_discovery;
+mod deployment_name;
 mod environments;
 mod link;
 mod login;
 pub(crate) mod profile;
+mod tunnel;
 
 use base64::Engine;
 use cling::prelude::*;
@@ -125,6 +127,7 @@ pub enum Cloud {
     /// then waits for the login to complete. Needs a person: agents can't complete it.
     Login(login::Login),
     Link(link::Link),
+    Tunnel(tunnel::Tunnel),
     /// Deprecated: use `restate env add` and `restate cloud tunnel`
     #[clap(subcommand)]
     #[command(hide = true)]

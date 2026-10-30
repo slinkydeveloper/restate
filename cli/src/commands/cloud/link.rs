@@ -23,6 +23,7 @@ use crate::clients::cloud::{CloudClient, CloudClientInterface};
 use crate::error::{ErrorKind, RestateCliError};
 use crate::ui::fmt::{Field, Formatter, IncludeFormatting, Outcome, OutputFormatter};
 
+use super::deployment_name::{default_deployment_name, hostname};
 use super::profile::{Choice, EnvironmentSpecifier, choose_environment, with_progress};
 
 /// The role of the key `restate cloud link` mints. Full access until the Connect role
@@ -316,56 +317,12 @@ fn role_label(role_id: &str) -> &'static str {
     }
 }
 
-fn hostname() -> String {
-    let host = hostname::get()
-        .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    host.split('.').next().unwrap_or_default().to_owned()
-}
-
 fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// `<directory>-<hostname>`, sanitised to what the tunnel server accepts.
-fn default_deployment_name() -> String {
-    let dir = std::env::current_dir()
-        .ok()
-        .and_then(|dir| dir.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "service".to_owned());
-    let host = hostname();
-    let raw = if host.is_empty() {
-        dir
-    } else {
-        format!("{dir}-{host}")
-    };
-    sanitize_deployment_name(&raw)
-}
-
-fn is_deployment_name_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')
-}
-
-/// Lowercase, every other character replaced by `-`, no leading, trailing or doubled `-`.
-fn sanitize_deployment_name(raw: &str) -> String {
-    let mut name = String::with_capacity(raw.len());
-    for c in raw.chars().flat_map(char::to_lowercase) {
-        if is_deployment_name_char(c) {
-            name.push(c);
-        } else if !name.ends_with('-') {
-            name.push('-');
-        }
-    }
-    let name = name.trim_matches('-');
-    if name.is_empty() {
-        "service".to_owned()
-    } else {
-        name.to_owned()
-    }
-}
-
 fn validate_deployment_name(name: &str) -> Result<String> {
-    if name.is_empty() || !name.chars().all(is_deployment_name_char) {
+    if name.is_empty() || !name.chars().all(super::deployment_name::is_valid_char) {
         return Err(RestateCliError::bad_input(format!(
             "Invalid deployment name \"{name}\": use letters, digits, `.`, `_` and `-`"
         ))
@@ -516,12 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn deployment_names_are_sanitised_or_validated() {
-        assert_eq!(
-            sanitize_deployment_name("My Project-Francesco's MBP"),
-            "my-project-francesco-s-mbp"
-        );
-        assert_eq!(sanitize_deployment_name("--/--"), "service");
+    fn deployment_names_are_validated() {
         assert!(validate_deployment_name("greeter_v1.0-dev").is_ok());
         assert!(validate_deployment_name("greeter laptop").is_err());
     }
