@@ -12,13 +12,15 @@ use anyhow::{Context, Result, anyhow};
 use cling::prelude::*;
 use indicatif::ProgressBar;
 use serde::Deserialize;
+use serde_json::{Value, json};
 use toml_edit::{DocumentMut, Item, table, value};
 
-use restate_cli_util::{CliContext, c_println, c_success, c_tip, c_warn};
+use restate_cli_util::{CliContext, c_println};
 
 use crate::commands::env::profile::{
     ProfileSpec, load_config_document, select_profile, write_profile,
 };
+use crate::ui::fmt::{Field, Formatter, IncludeFormatting, Outcome, OutputFormatter};
 use crate::{build_info, cli_env::CliEnv, clients::cloud::CloudClient};
 
 use super::profile::{Choice, choose_environment};
@@ -47,48 +49,80 @@ pub async fn run_login(State(env): State<CliEnv>, opts: &Login) -> Result<()> {
     write_access_token(&mut doc, &access_token)?;
     env.write_config(&doc.to_string())
         .context("Failed to write to config file")?;
-    c_success!(
-        "Updated {} with Restate Cloud credentials",
-        env.config_file.display()
-    );
 
+    let mut f = Formatter::new();
+    f.outcome(
+        "credentials",
+        Field::with_display(
+            json!({ "config_file": env.config_file.display().to_string() }),
+            format!(
+                "Updated {} with Restate Cloud credentials",
+                env.config_file.display()
+            ),
+        ),
+        Outcome::Success,
+    );
     if opts.no_env {
-        return Ok(());
+        return f.finish();
     }
 
     let mut env = env;
     env.config.cloud.credentials = Some(super::Credentials { access_token });
     // The login succeeded whatever happens next: a failure to select an environment is
     // reported, not an error.
-    if let Err(err) = select_environment(&env).await {
-        c_warn!(
-            "Logged in, but couldn't select an environment: {err:#}\nRun `restate env add` to pick one."
+    if let Err(err) = select_environment(&env, &mut f).await {
+        f.warning(&format!(
+            "Logged in, but couldn't select an environment: {err:#}"
+        ));
+        f.next_step(
+            "restate env add",
+            "pick the environment to use",
+            IncludeFormatting::Yes,
         );
     }
-    Ok(())
+    f.finish()
 }
 
 /// Select the Cloud environment to use: silently when there is one account with one
 /// environment, by asking when possible, else leave it to `restate env add`.
-async fn select_environment(env: &CliEnv) -> Result<()> {
+async fn select_environment(env: &CliEnv, f: &mut Formatter) -> Result<()> {
     let client = CloudClient::new(env)?;
+    let no_environment = |f: &mut Formatter, message: String| {
+        f.outcome(
+            "environment",
+            Field::with_display(Value::Null, message),
+            Outcome::NothingToDo,
+        );
+    };
     let chosen = match choose_environment(&client, None, CliContext::get().can_prompt()).await? {
         Choice::Environment(chosen) => chosen,
         Choice::NoAccounts => {
-            c_tip!(
-                "It looks like you don't have an account yet.\nLog in to the UI at https://cloud.restate.dev to create one."
+            no_environment(
+                f,
+                "No account yet: create one in the Cloud UI at https://cloud.restate.dev"
+                    .to_owned(),
             );
             return Ok(());
         }
         Choice::NoEnvironments { account_name } => {
-            c_tip!(
-                "Account {account_name} has no environment yet.\nCreate one in the UI at https://cloud.restate.dev, then run `restate env add`."
+            no_environment(
+                f,
+                format!(
+                    "Account {account_name} has no environment yet: create one in the Cloud UI at https://cloud.restate.dev"
+                ),
             );
+            f.next_step("restate env add", "then select it", IncludeFormatting::Yes);
             return Ok(());
         }
         Choice::Ambiguous => {
-            c_tip!(
-                "You have several accounts or environments: run `restate env add` to pick the one to use."
+            no_environment(
+                f,
+                "No environment selected: you have several accounts or environments".to_owned(),
+            );
+            f.next_step(
+                "restate env add",
+                "pick the one to use",
+                IncludeFormatting::Yes,
             );
             return Ok(());
         }
@@ -99,8 +133,16 @@ async fn select_environment(env: &CliEnv) -> Result<()> {
     if let Some(existing) = doc.get(&profile)
         && !is_cloud_environment(existing, &chosen.environment.environment_id)
     {
-        c_tip!(
-            "The CLI config file already has an environment named \"{profile}\" that isn't this one.\nRun `restate env add` to add it under another name."
+        no_environment(
+            f,
+            format!(
+                "No environment selected: the CLI config file already has an environment named \"{profile}\" that isn't this one"
+            ),
+        );
+        f.next_step(
+            &format!("restate env add {}/{}", chosen.account_name, profile),
+            "add it under another name",
+            IncludeFormatting::Yes,
         );
         return Ok(());
     }
@@ -115,11 +157,27 @@ async fn select_environment(env: &CliEnv) -> Result<()> {
     env.write_config(&doc.to_string())
         .context("Failed to write to config file")?;
     select_profile(env, &profile)?;
-    c_success!(
-        "Using environment \"{profile}\" ({}, {}) of account {}",
-        chosen.environment.environment_id,
-        chosen.environment.region,
-        chosen.account_name
+    f.outcome(
+        "environment",
+        Field::with_display(
+            json!({
+                "name": profile,
+                "environment_id": chosen.environment.environment_id,
+                "region": chosen.environment.region,
+                "account_id": chosen.account_id,
+                "account_name": chosen.account_name,
+            }),
+            format!(
+                "Using environment \"{profile}\" ({}, {}) of account {}",
+                chosen.environment.environment_id, chosen.environment.region, chosen.account_name
+            ),
+        ),
+        Outcome::Success,
+    );
+    f.next_step(
+        "restate cloud link",
+        "connect a service in the current directory to it",
+        IncludeFormatting::Yes,
     );
     Ok(())
 }

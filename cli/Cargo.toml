@@ -61,6 +61,7 @@ dirs = { version = "7.0.0" }
 figment = { version = "0.10.19", features = ["env", "toml"] }
 futures = { workspace = true }
 hickory-resolver = "0.26.1"
+hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }

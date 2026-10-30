@@ -10,6 +10,7 @@
 
 mod config_discovery;
 mod environments;
+mod link;
 mod login;
 pub(crate) mod profile;
 
@@ -123,6 +124,7 @@ pub enum Cloud {
     /// Prints a URL and a code to confirm in the browser (opened automatically when possible),
     /// then waits for the login to complete. Needs a person: agents can't complete it.
     Login(login::Login),
+    Link(link::Link),
     /// Deprecated: use `restate env add` and `restate cloud tunnel`
     #[clap(subcommand)]
     #[command(hide = true)]

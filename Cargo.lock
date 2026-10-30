@@ -7660,6 +7660,7 @@ dependencies = [
  "figment",
  "futures",
  "hickory-resolver",
+ "hostname",
  "http 1.5.0",
  "humantime",
  "hyper",
